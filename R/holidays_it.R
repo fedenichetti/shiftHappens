@@ -23,3 +23,40 @@ easter_sunday <- function(year) {
   day <- ((h + l - 7 * m + 114) %% 31) + 1
   as.Date(sprintf("%04d-%02d-%02d", year, month, day))
 }
+
+#' Italian national holidays for a given year.
+#'
+#' Returns the 10 fixed-date national holidays plus Easter Sunday and
+#' Easter Monday computed via easter_sunday().
+#'
+#' @param year integer
+#' @return tibble with columns date (Date) and name (character)
+italian_holidays <- function(year) {
+  fixed <- tibble::tibble(
+    name = c(
+      "Capodanno", "Epifania", "Festa della Liberazione",
+      "Festa dei Lavoratori", "Festa della Repubblica",
+      "Ferragosto", "Tutti i Santi", "Immacolata Concezione",
+      "Natale", "Santo Stefano"
+    ),
+    md = c(
+      "01-01", "01-06", "04-25",
+      "05-01", "06-02",
+      "08-15", "11-01", "12-08",
+      "12-25", "12-26"
+    )
+  )
+  fixed$date <- as.Date(sprintf("%04d-%s", year, fixed$md))
+  fixed$md <- NULL
+
+  easter <- easter_sunday(year)
+  movable <- tibble::tibble(
+    date = c(easter, easter + 1L),
+    name = c("Pasqua", "Pasquetta")
+  )
+
+  result <- dplyr::bind_rows(fixed, movable)
+  result <- result[order(result$date), c("date", "name")]
+  rownames(result) <- NULL
+  tibble::as_tibble(result)
+}
