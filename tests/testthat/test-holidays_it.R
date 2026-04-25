@@ -31,3 +31,19 @@ test_that("italian_holidays includes Easter and Easter Monday", {
   expect_true(as.Date("2026-04-05") %in% h$date)   # Pasqua
   expect_true(as.Date("2026-04-06") %in% h$date)   # Pasquetta
 })
+
+test_that("holidays_for_year merges YAML extras", {
+  extras <- list(
+    list(name = "S. Patrono", date = "12-04"),
+    list(name = "Festa locale", date = "06-13")
+  )
+  h <- holidays_for_year(2026, holidays_extra = extras)
+  expect_equal(nrow(h), 14L)
+  expect_true(as.Date("2026-12-04") %in% h$date)
+  expect_true(as.Date("2026-06-13") %in% h$date)
+})
+
+test_that("holidays_for_year handles empty extras", {
+  expect_equal(nrow(holidays_for_year(2026, holidays_extra = list())), 12L)
+  expect_equal(nrow(holidays_for_year(2026, holidays_extra = NULL)), 12L)
+})

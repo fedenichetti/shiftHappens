@@ -60,3 +60,24 @@ italian_holidays <- function(year) {
   rownames(result) <- NULL
   tibble::as_tibble(result)
 }
+
+#' All holidays (national + per-unit extras) for a given year.
+#'
+#' @param year integer
+#' @param holidays_extra list of named lists with `name` and `date` (MM-DD)
+#' @return tibble with columns date (Date) and name (character)
+holidays_for_year <- function(year, holidays_extra = NULL) {
+  national <- italian_holidays(year)
+  if (length(holidays_extra) == 0) return(national)
+
+  extras <- purrr::map_dfr(holidays_extra, function(h) {
+    tibble::tibble(
+      name = h$name,
+      date = as.Date(sprintf("%04d-%s", year, h$date))
+    )
+  })
+  result <- dplyr::bind_rows(national, extras)
+  result <- result[order(result$date), ]
+  rownames(result) <- NULL
+  tibble::as_tibble(result)
+}
