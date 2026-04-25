@@ -47,3 +47,10 @@ test_that("holidays_for_year handles empty extras", {
   expect_equal(nrow(holidays_for_year(2026, holidays_extra = list())), 12L)
   expect_equal(nrow(holidays_for_year(2026, holidays_extra = NULL)), 12L)
 })
+
+test_that("holidays_for_year rejects malformed extra dates", {
+  bad <- list(list(name = "Bogus", date = "13-32"))
+  expect_error(holidays_for_year(2026, holidays_extra = bad))
+  not_a_string <- list(list(name = "Bogus", date = 1204))
+  expect_error(holidays_for_year(2026, holidays_extra = not_a_string))
+})

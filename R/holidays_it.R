@@ -71,13 +71,19 @@ holidays_for_year <- function(year, holidays_extra = NULL) {
   if (length(holidays_extra) == 0) return(national)
 
   extras <- purrr::map_dfr(holidays_extra, function(h) {
-    tibble::tibble(
-      name = h$name,
-      date = as.Date(sprintf("%04d-%s", year, h$date))
-    )
+    if (!is.character(h$date) || !grepl("^\\d{2}-\\d{2}$", h$date)) {
+      stop("holidays_extra entry has invalid date '", h$date,
+           "'; expected 'MM-DD' format")
+    }
+    parsed <- suppressWarnings(as.Date(sprintf("%04d-%s", year, h$date)))
+    if (is.na(parsed)) {
+      stop("holidays_extra entry has impossible date '", h$date,
+           "'; expected valid 'MM-DD'")
+    }
+    tibble::tibble(name = h$name, date = parsed)
   })
   result <- dplyr::bind_rows(national, extras)
-  result <- result[order(result$date), ]
+  result <- result[order(result$date), c("date", "name")]
   rownames(result) <- NULL
   tibble::as_tibble(result)
 }
