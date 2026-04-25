@@ -53,7 +53,7 @@ These were resolved during brainstorming. Each is non-negotiable for v1; changes
 | 6 | I/O format | **Excel** (`.xlsx`) with five input sheets and three output sheets. | Matches existing hospital workflow; non-technical users already know Excel. |
 | 7 | Holiday handling | **Hardcoded** Italian national holidays (computed per year, including Easter via computus); per-unit local holidays via `holidays_extra` in YAML. | No reliable Italian-holidays R package; implementation is small and well-defined. |
 | 8 | Access control | **App-level passcode** via env var (`APP_PASSCODE`). One Connect Cloud deployment per unit, each with its own passcode and YAML config. | Free tier; sufficient for single-unit use; clean upgrade path to Connect Cloud paid auth without code changes. |
-| 9 | UI style | **bslib** with Bootstrap 5, single accent color, system typeface, no decorative imagery, weekend-row shading on the calendar. | Minimal, elegant, native-looking on every platform. Posit-recommended path. |
+| 9 | UI style | **bslib** with Bootstrap 5. Visual reference: [curbcut.ca](https://www.curbcut.ca/en-ca) — monochrome base, single teal accent, oversized confident display typography (Inter), generous whitespace, no decorative imagery, borderless cards, weekend-row shading on the calendar. | Minimal, elegant, data-forward. Curbcut is itself a Canadian civic-data dashboard ecosystem — same audience type (non-technical professionals reading a data product), same restraint. |
 
 ---
 
@@ -344,7 +344,8 @@ holidays_extra:
   - { name: "S. Patrono",  date: "12-04" }   # MM-DD; per-unit local holidays
   - { name: "Local feast", date: "06-13" }
 ui:
-  primary_color: "#2c5f7e"
+  primary_color: "#1ca5b8"        # Curbcut-style teal accent; override per unit
+  error_color: "#c4302b"
   table_density: "compact"
 ```
 
@@ -593,24 +594,34 @@ The app has six states. Transitions are driven by user actions and reactive resu
 
 ### 11.3 Styling
 
+**Reference:** [curbcut.ca](https://www.curbcut.ca/en-ca). Curbcut's visual language is the target: high-contrast monochrome (near-black on white), one teal accent, generous whitespace, oversized confident display typography for headlines, clean sans-serif for body, no decorative imagery, data takes center stage.
+
 ```r
 bs_theme(
   version = 5,
-  primary = config$ui$primary_color,    # default "#2c5f7e"
-  base_font = font_collection("system-ui", "-apple-system", "Segoe UI"),
+  bg = "#ffffff",
+  fg = "#111111",
+  primary = config$ui$primary_color,                # default "#1ca5b8" — curbcut-style teal
+  base_font = font_collection("Inter", "system-ui", "-apple-system", "Segoe UI", "Helvetica"),
+  heading_font = font_collection("Inter", "system-ui", "-apple-system"),
   font_scale = 1.0
 )
 ```
 
-Principles:
+Principles drawn from the reference:
 
-- One accent color, configurable per unit via YAML.
-- System typeface stack — fast, native-looking.
-- No icons except functional ones (upload, download).
-- No decorative imagery.
-- Calendar weekend rows shaded `#f7f7f7`.
-- Status: one prominent banner per state.
-- No animation beyond Bootstrap defaults.
+- **Monochrome base + one accent.** Background `#ffffff`, foreground `#111111`, accent teal `#1ca5b8` (override per unit via YAML).
+- **Typography hierarchy.** Headlines (unit name in header, status banners, section labels in result panel) use a **bold, oversized display weight** (e.g., 36–48px, weight 700, tight tracking). Body text stays at standard 16px. The contrast in scale carries the visual rhythm — Curbcut's hero treatment translated to a Shiny dashboard.
+- **Sans-serif throughout.** Inter (loaded via Google Fonts) with system-ui fallback. No serifs anywhere.
+- **Generous whitespace.** Section padding `2rem` minimum vertical, `1.5rem` between cards. The dashboard breathes; nothing crowded.
+- **Borderless cards.** `bslib::card()` with no border, subtle background `#fafafa` or `#ffffff` with a thin bottom rule (`border-bottom: 1px solid #eaeaea`) to separate sections instead of card outlines. Curbcut groups content with whitespace and typography, not with boxes.
+- **Functional iconography only.** Upload, download, status indicators (check / warning / cross). Single-line stroke style (Lucide or Bootstrap Icons), 16–20px, never decorative.
+- **No imagery, no illustrations.** Empty states use confident text only, the way Curbcut's hero does.
+- **Calendar weekend rows shaded `#f7f7f7`** (matches the constraints doc convention; harmonizes with the monochrome scheme).
+- **Status banner** in each state uses the accent teal as a left border (`border-left: 4px solid #1ca5b8`) plus bold display text, no full-width filled banner. Error state swaps the accent for a desaturated red `#c4302b`.
+- **No animation beyond Bootstrap defaults.** No fades on state change; instant transitions feel more confident.
+
+Optional `_brand.yml` (bslib supports it) can later codify the teal palette and Inter font once the styling is locked, making per-unit re-themes a one-file change.
 
 ### 11.4 Tables
 
