@@ -333,7 +333,11 @@ build_milp <- function(ctx) {
     }
   }
 
-  # Tier 2: weekend/holiday equity. Per-op deviation from group mean.
+  # Tier 2: weekend/holiday equity. Per-op deviation from group mean of
+  # (target-month weekend+holiday count + carry-in window count). Spec
+  # §7.2.3: dispersion is computed over (target + carry_in) per operator.
+  # Since carry_in[op] is a constant, we fold it into a per-operator
+  # effective mean: effective_mean_op = mean_total - carry_count[op].
   we_h_days <- ctx$calendar$day_idx[ctx$calendar$is_weekend |
                                        ctx$calendar$is_holiday]
   m <- ompr::add_variable(m, we_dev[op_d], op_d = 1:N_op,
@@ -345,18 +349,29 @@ build_milp <- function(ctx) {
       if (group_size == 0) next
       total_we_slots <- sum(purrr::map_int(we_h_days, function(d)
         nrow(ctx$calendar$slots[[d]])))
-      # group mean approximation (split equally across the group).
-      mean_we <- total_we_slots / group_size
+      # Carry-in counts within this role group are constants.
+      carry_total <- sum(ctx$carry_in$carry_count[
+        ctx$carry_in$op_idx %in% op_set
+      ])
+      # Group mean of (target + carry_in) per operator.
+      mean_total <- (total_we_slots + carry_total) / group_size
       for (op_i in op_set) {
+        carry_op <- ctx$carry_in$carry_count[ctx$carry_in$op_idx == op_i]
+        if (length(carry_op) == 0) carry_op <- 0L
+        # The constraint
+        #   we_dev[op] >= (sum_target[op] + carry_op) - mean_total
+        # rearranges to
+        #   we_dev[op] >= sum_target[op] - (mean_total - carry_op).
+        effective_mean_op <- mean_total - carry_op
         m <- ompr::add_constraint(m,
           we_dev[op_i] >=
             ompr::sum_over(x[op_i, d, s, rp],
                            d = we_h_days, s = 1:max_slots, rp = 1:2)
-            - mean_we
+            - effective_mean_op
         )
         m <- ompr::add_constraint(m,
           we_dev[op_i] >=
-            mean_we -
+            effective_mean_op -
             ompr::sum_over(x[op_i, d, s, rp],
                            d = we_h_days, s = 1:max_slots, rp = 1:2)
         )
