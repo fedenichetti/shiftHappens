@@ -44,3 +44,28 @@ test_that("load_rules errors on wrong type", {
   expect_error(load_rules(tmp), regexp = "senior_max_per_month")
   unlink(tmp)
 })
+
+test_that("load_rules rejects non-integer numerics rather than silently truncating", {
+  tmp <- tempfile(fileext = ".yaml")
+  writeLines(c(
+    "unit: {name: 'X'}",
+    "roles: {primary: 'senior', secondary: ['nurse_2']}",
+    "limits:",
+    "  senior_max_per_month: 7.5"
+  ), tmp)
+  expect_error(load_rules(tmp), regexp = "expected integer")
+  unlink(tmp)
+})
+
+test_that("load_rules preserves defaults when a YAML section is explicitly null", {
+  tmp <- tempfile(fileext = ".yaml")
+  writeLines(c(
+    "unit: {name: 'X'}",
+    "roles: {primary: 'senior', secondary: ['nurse_2']}",
+    "limits: ~"   # YAML explicit null
+  ), tmp)
+  r <- load_rules(tmp)
+  expect_equal(r$limits$senior_max_per_month, 7L)
+  expect_equal(r$limits$rolling_history_months, 1L)
+  unlink(tmp)
+})

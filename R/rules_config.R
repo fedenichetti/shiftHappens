@@ -48,6 +48,7 @@
 .merge_lists <- function(default, override) {
   if (!is.list(default) || !is.list(override)) return(override %||% default)
   for (k in names(override)) {
+    if (is.null(override[[k]])) next   # explicit null preserves the default
     default[[k]] <- if (is.list(default[[k]]) && is.list(override[[k]])) {
       .merge_lists(default[[k]], override[[k]])
     } else {
@@ -92,6 +93,10 @@ load_rules <- function(path) {
       if (!is.numeric(v) || length(v) != 1L || is.na(v) || v < 0) {
         stop("invalid value for ", section, ".", key,
              ": expected non-negative number, got ", deparse(v))
+      }
+      if (v != as.integer(v)) {
+        stop("invalid value for ", section, ".", key,
+             ": expected integer, got ", deparse(v))
       }
       merged[[section]][[key]] <- as.integer(v)
     }
