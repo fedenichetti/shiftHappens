@@ -3827,6 +3827,12 @@ git status
 
 - **Shiny end-to-end test** — spec §10.3 marks this deferred to v1.1. Plan honors that.
 
+- **§9.2 warning rules** — spec §9.2 lists four non-blocking warning checks (senior with zero history rows, unmatchable preference row, orphan operator with no presence anywhere, total absences ≥ 50% of any role group on any single day). Phase 5's Task 5.1 implemented only the §9.1 error rules. Logged here as a follow-up; see "Task 5.2 (follow-up)" below.
+
+  ### Task 5.2 (follow-up): §9.2 non-blocking warnings
+
+  Extend `validate_inputs()` to add four warning rows (severity = "warning") when the relevant condition is met. Add tests for each. None of these block generation — they're surfaced in the UI's yellow "Avvisi" panel for the caposala's awareness. Schedule when convenient; not on the critical path.
+
 **Placeholder scan:** none of the forbidden patterns ("TBD", "TODO", "implement later", "fill in details", "Add appropriate error handling") appear in this plan. Every step has either complete code or an exact command. The single intentional deferral (smoothness tier) is documented in code comments and called out here.
 
 **Type consistency:** `operator_id`, `op_idx`, `day_idx`, `slot_kind`, `role` (`senior`/`nurse_2`/`oss_2`), `role_pos` (1=first, 2=second), `period` (`day`/`night`), `slot_type` (preferences enum), and `polarity` (`avoid`/`prefer`) are used consistently across tasks. Function names: `easter_sunday`, `italian_holidays`, `holidays_for_year`, `month_days`, `slots_for_kind`, `build_calendar`, `load_rules`, `read_workbook`, `validate_inputs`, `build_model_context`, `build_milp`, `solve_milp`, `diagnose_infeasibility`, `postprocess_solution`, `write_output_workbook`. Each is defined exactly once and referenced consistently.
