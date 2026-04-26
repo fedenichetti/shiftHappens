@@ -235,13 +235,17 @@ build_milp <- function(ctx) {
     for (op_i in 1:N_op) {
       for (w in seq_along(weekend_groups)) {
         days_in_w <- weekend_groups[[w]]
-        bigM <- max_slots * 2L * length(days_in_w)
-        # BigM link: sum of x in this weekend group <= M * weekend_worked
-        m <- ompr::add_constraint(m,
-          ompr::sum_over(x[op_i, d, s, rp],
-                         d = days_in_w, s = 1:max_slots, rp = 1:2) <=
-            bigM * weekend_worked[op_i, w]
-        )
+        # Tight per-x link: weekend_worked >= each x in the group.
+        for (d in days_in_w) {
+          n_slots_d <- nrow(ctx$calendar$slots[[d]])
+          for (s in seq_len(n_slots_d)) {
+            for (rp in 1:2) {
+              m <- ompr::add_constraint(m,
+                weekend_worked[op_i, w] >= x[op_i, d, s, rp]
+              )
+            }
+          }
+        }
       }
       m <- ompr::add_constraint(m,
         ompr::sum_over(weekend_worked[op_i, w], w = 1:N_w) <= cap
@@ -290,6 +294,142 @@ build_milp <- function(ctx) {
         }
       }
     }
+  }
+
+  # ---------------------------------------------------------------------
+  # SOFT OBJECTIVE
+  # Tier 1: monthly-total dispersion within role group (senior, second).
+  # Tier 2: weekend+holiday count deviation per operator from group mean.
+  # Tier 3: soft preferences (hard == FALSE) -- penalize matching x.
+  # Tier 4: smoothness -- DEFERRED to v1.1 (linearization required).
+  # ---------------------------------------------------------------------
+  fw <- ctx$rules$fairness_weights
+
+  # Tier 1: introduce t_max[g], t_min[g] for each role group.
+  groups <- list(
+    senior = senior_idx,
+    second = seq_len(N_op)  # any operator may take role_pos = 2
+  )
+  N_g <- length(groups)
+  m <- ompr::add_variable(m, t_max[g_idx], g_idx = 1:N_g,
+                          type = "continuous", lb = 0)
+  m <- ompr::add_variable(m, t_min[g_idx], g_idx = 1:N_g,
+                          type = "continuous", lb = 0)
+  for (gi in seq_along(groups)) {
+    op_set <- groups[[gi]]
+    rp_set <- if (gi == 1L) 1L else 2L
+    if (length(op_set) == 0) next
+    for (op_i in op_set) {
+      m <- ompr::add_constraint(m,
+        t_max[gi] >=
+          ompr::sum_over(x[op_i, d, s, rp_set],
+                         d = 1:N_day, s = 1:max_slots)
+      )
+      m <- ompr::add_constraint(m,
+        t_min[gi] <=
+          ompr::sum_over(x[op_i, d, s, rp_set],
+                         d = 1:N_day, s = 1:max_slots)
+      )
+    }
+  }
+
+  # Tier 2: weekend/holiday equity. Per-op deviation from group mean.
+  we_h_days <- ctx$calendar$day_idx[ctx$calendar$is_weekend |
+                                       ctx$calendar$is_holiday]
+  m <- ompr::add_variable(m, we_dev[op_d], op_d = 1:N_op,
+                          type = "continuous", lb = 0)
+  if (length(we_h_days) > 0) {
+    for (gi in seq_along(groups)) {
+      op_set <- groups[[gi]]
+      group_size <- length(op_set)
+      if (group_size == 0) next
+      total_we_slots <- sum(purrr::map_int(we_h_days, function(d)
+        nrow(ctx$calendar$slots[[d]])))
+      # group mean approximation (split equally across the group).
+      mean_we <- total_we_slots / group_size
+      for (op_i in op_set) {
+        m <- ompr::add_constraint(m,
+          we_dev[op_i] >=
+            ompr::sum_over(x[op_i, d, s, rp],
+                           d = we_h_days, s = 1:max_slots, rp = 1:2)
+            - mean_we
+        )
+        m <- ompr::add_constraint(m,
+          we_dev[op_i] >=
+            mean_we -
+            ompr::sum_over(x[op_i, d, s, rp],
+                           d = we_h_days, s = 1:max_slots, rp = 1:2)
+        )
+      }
+    }
+  }
+
+  # Tier 3: soft preferences. For each soft "avoid" preference row, add a
+  # continuous penalty variable bounded below by the matching x-sum so that
+  # any matching assignment incurs cost.
+  pref_terms <- list()
+  if (!is.null(ctx$preferences) && nrow(ctx$preferences) > 0) {
+    for (i in seq_len(nrow(ctx$preferences))) {
+      pref <- ctx$preferences[i, ]
+      if (isTRUE(pref$hard)) next
+      op_match <- ctx$operators$op_idx[
+        ctx$operators$operator_id == pref$operator_id |
+        ctx$operators$surname == pref$operator_id
+      ]
+      if (length(op_match) == 0) next
+      day_match <- if (is.na(pref$weekday)) seq_len(N_day) else
+        ctx$calendar$day_idx[ctx$calendar$weekday == pref$weekday]
+      for (op_a in op_match) {
+        for (d in day_match) {
+          slots_today <- ctx$calendar$slots[[d]]
+          slot_match <- if (is.na(pref$slot_type)) {
+            seq_len(nrow(slots_today))
+          } else {
+            which(slots_today$period == pref$slot_type)
+          }
+          if (length(slot_match) == 0) next
+          if (pref$polarity == "avoid") {
+            pref_terms[[length(pref_terms) + 1]] <- list(
+              op = op_a, day = d, slots = slot_match
+            )
+          }
+        }
+      }
+    }
+  }
+
+  N_pref <- length(pref_terms)
+  if (N_pref > 0) {
+    m <- ompr::add_variable(m, pref_pen[p_idx], p_idx = 1:N_pref,
+                            type = "continuous", lb = 0)
+    for (pi in seq_along(pref_terms)) {
+      pt <- pref_terms[[pi]]
+      m <- ompr::add_constraint(m,
+        pref_pen[pi] >=
+          ompr::sum_over(x[pt$op, pt$day, s, rp], s = pt$slots, rp = 1:2)
+      )
+    }
+  }
+
+  # Compose objective.
+  if (N_pref > 0) {
+    m <- ompr::set_objective(m,
+      fw$monthly_total *
+        ompr::sum_over(t_max[g_idx] - t_min[g_idx], g_idx = 1:N_g) +
+      fw$weekend_holiday *
+        ompr::sum_over(we_dev[op_d], op_d = 1:N_op) +
+      fw$preference *
+        ompr::sum_over(pref_pen[p_idx], p_idx = 1:N_pref),
+      sense = "min"
+    )
+  } else {
+    m <- ompr::set_objective(m,
+      fw$monthly_total *
+        ompr::sum_over(t_max[g_idx] - t_min[g_idx], g_idx = 1:N_g) +
+      fw$weekend_holiday *
+        ompr::sum_over(we_dev[op_d], op_d = 1:N_op),
+      sense = "min"
+    )
   }
 
   m

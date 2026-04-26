@@ -241,13 +241,16 @@ test_that("H7 forbids the three banned weekend combinations", {
 
 test_that("H8 enforces min_free_weekends_per_month", {
   rules_path <- testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml")
-  # Larger operator pool so that capping each at 1 weekend is feasible:
-  # 2 weekends * 4 senior-first slots = 8 senior covers needed; with H7
-  # each op can usually cover ~2 weekend slots, so we need >= 4 seniors.
+  # Pool sized so the cap (1 worked weekend / op) is easy to satisfy:
+  # 2 weekends * 4 senior-first slots = 8 senior covers; with H7 each op
+  # covers ~2 weekend slots; 4+ seniors suffice. Zero out the fairness
+  # weights so the solver doesn't have to prove dispersion-optimality
+  # (constraint correctness is what the test asserts).
   ops <- tibble::tibble(
-    surname = c("S1", "S2", "S3", "S4", "S5", "J1", "J2", "J3", "J4", "J5"),
+    surname = c("S1", "S2", "S3", "S4", "S5", "S6",
+                "J1", "J2", "J3", "J4", "J5", "J6"),
     name = "",
-    role = c(rep("senior", 5), rep("nurse_2", 5)),
+    role = c(rep("senior", 6), rep("nurse_2", 6)),
     part_time_pct = 100L,
     active_from = as.Date("2024-01-01"),
     active_to = as.Date("9999-12-31")
@@ -266,6 +269,9 @@ test_that("H8 enforces min_free_weekends_per_month", {
   )
   rules <- load_rules(rules_path)
   rules$limits$min_free_weekends_per_month <- 1L
+  rules$fairness_weights$monthly_total <- 0
+  rules$fairness_weights$weekend_holiday <- 0
+  rules$fairness_weights$preference <- 0
   N <- nrow(ops)
   ctx <- list(
     operators = dplyr::mutate(ops, operator_id = surname, op_idx = seq_len(N)),
@@ -326,4 +332,44 @@ test_that("H10 hard preference excludes operator from matching slot", {
   vals <- ompr::get_solution(sol, x[op, day, slot, role_pos])
   vals <- vals[vals$value > 0.5, ]
   expect_false(any(vals$op == 1L))
+})
+
+test_that("soft objective minimizes senior dispersion", {
+  rules_path <- testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml")
+  ops <- tibble::tibble(
+    surname = c("S1", "S2", "S3", "S4", "J1", "J2", "J3", "J4"),
+    name = "",
+    role = c(rep("senior", 4), rep("nurse_2", 4)),
+    part_time_pct = 100L,
+    active_from = as.Date("2024-01-01"),
+    active_to = as.Date("9999-12-31")
+  )
+  # 8 well-spaced weekdays so 8 first-role slots are needed; gaps avoid H5.
+  cal <- tibble::tibble(
+    date = as.Date(c("2026-06-01", "2026-06-03", "2026-06-05", "2026-06-08",
+                     "2026-06-10", "2026-06-12", "2026-06-15", "2026-06-17")),
+    weekday = c(1L, 3L, 5L, 1L, 3L, 5L, 1L, 3L),
+    is_weekend = FALSE, is_holiday = FALSE,
+    slot_kind = "weekday",
+    slots = list(slots_for_kind("weekday"), slots_for_kind("weekday"),
+                 slots_for_kind("weekday"), slots_for_kind("weekday"),
+                 slots_for_kind("weekday"), slots_for_kind("weekday"),
+                 slots_for_kind("weekday"), slots_for_kind("weekday"))
+  )
+  rules <- load_rules(rules_path)
+  ctx <- list(
+    operators = dplyr::mutate(ops, operator_id = surname, op_idx = seq_len(8)),
+    calendar = dplyr::mutate(cal, day_idx = seq_len(8)),
+    rules = rules,
+    absent_idx = matrix(integer(0), ncol = 2),
+    carry_in = tibble::tibble(op_idx = 1:8, operator_id = ops$surname, carry_count = 0L),
+    preferences = NULL
+  )
+  m <- build_milp(ctx)
+  sol <- ompr::solve_model(m, ompr.roi::with_ROI(solver = "glpk"))
+  expect_true(ompr::solver_status(sol) %in% c("optimal", "success"))
+  vals <- ompr::get_solution(sol, x[op, day, slot, role_pos])
+  vals <- vals[vals$value > 0.5, ]
+  senior_counts <- sapply(1:4, function(op) sum(vals$op == op & vals$role_pos == 1L))
+  expect_equal(max(senior_counts) - min(senior_counts), 0L)
 })
