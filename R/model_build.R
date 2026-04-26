@@ -186,9 +186,11 @@ build_milp <- function(ctx) {
     }
   }
 
-  # H7: no 24h consecutive on weekend/holiday days. Forbid:
+  # H7: no 24h consecutive on weekend/holiday days, FOR THE SAME OPERATOR.
+  # Forbid (per operator op_i):
   #   (day=d, period=day) AND (day=d, period=night)            -- same day
   #   (day=d, period=night) AND (day=d+1, period=day)          -- night-then-day
+  # Different operators can freely cover day-vs-night of the same calendar day.
   for (op_i in 1:N_op) {
     for (d in 1:N_day) {
       if (ctx$calendar$slot_kind[d] == "weekday") next
