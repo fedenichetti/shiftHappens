@@ -72,3 +72,62 @@ build_model_context <- function(wb, rules, cal) {
     carry_in   = carry_full
   )
 }
+
+#' Build the MILP for an on-call month using the prepared context.
+#'
+#' Decision variable: x[op, day, slot, role_pos] in {0,1} where slot is
+#' the index within calendar$slots[[day]] and role_pos in {1,2} for
+#' (first, second).
+#'
+#' This task adds H1 (coverage) only. Subsequent tasks layer on H2-H10.
+#'
+#' @param ctx result of build_model_context
+#' @return ompr optimization_model
+build_milp <- function(ctx) {
+  N_op  <- nrow(ctx$operators)
+  N_day <- nrow(ctx$calendar)
+  # Maximum slots-per-day across the month (for tensor sizing).
+  max_slots <- max(purrr::map_int(ctx$calendar$slots, nrow))
+  # Build a tibble of valid (day_idx, slot_idx, role) triples.
+  slot_grid <- purrr::map_dfr(seq_len(N_day), function(d) {
+    s <- ctx$calendar$slots[[d]]
+    s$day_idx  <- d
+    s$slot_idx <- seq_len(nrow(s))
+    s
+  })
+
+  m <- ompr::MIPModel()
+  m <- ompr::add_variable(
+    m,
+    x[op, day, slot, role_pos],
+    op       = 1:N_op,
+    day      = 1:N_day,
+    slot     = 1:max_slots,
+    role_pos = 1:2,
+    type     = "binary"
+  )
+
+  # H1 coverage: for every (day, slot, role_pos) tuple that exists in
+  # slot_grid, exactly one operator is assigned. role_pos 1 = "first",
+  # 2 = "second"; map slot_grid$role to role_pos here.
+  for (i in seq_len(nrow(slot_grid))) {
+    d  <- slot_grid$day_idx[i]
+    s  <- slot_grid$slot_idx[i]
+    rp <- if (slot_grid$role[i] == "first") 1L else 2L
+    m <- ompr::add_constraint(m, ompr::sum_over(x[op, d, s, rp], op = 1:N_op) == 1)
+  }
+
+  # Hidden tuples (slot_idx beyond what this day actually has): force to 0.
+  for (d in seq_len(N_day)) {
+    actual_slots <- nrow(ctx$calendar$slots[[d]])
+    if (actual_slots < max_slots) {
+      for (s in (actual_slots + 1L):max_slots) {
+        for (rp in 1:2) {
+          m <- ompr::add_constraint(m, ompr::sum_over(x[op, d, s, rp], op = 1:N_op) == 0)
+        }
+      }
+    }
+  }
+
+  m
+}

@@ -34,3 +34,52 @@ test_that("build_model_context flags absent (op, day) pairs", {
   expect_true(any(ctx$absent_idx[, 1] == carniti_idx[1] &
                   ctx$absent_idx[, 2] == june5_idx))
 })
+
+test_that("build_milp produces an ompr model object", {
+  fixture <- testthat::test_path("..", "..", "inst", "examples", "may2026_workbook.xlsx")
+  rules_path <- testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml")
+  wb <- read_workbook(fixture)
+  rules <- load_rules(rules_path)
+  cal <- build_calendar(2026, 6, holidays_extra = list())
+  ctx <- build_model_context(wb, rules, cal)
+  m <- build_milp(ctx)
+  expect_true(inherits(m, "optimization_model") ||
+              inherits(m, "linear_optimization_model") ||
+              inherits(m, "abstract_model"))
+  expect_gt(ompr::nvars(m)$binary, 0L)
+})
+
+test_that("solver returns a feasible assignment for trivial input", {
+  rules_path <- testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml")
+  ops <- tibble::tibble(
+    surname = c("S1", "S2", "S3", "J1", "J2", "J3"),
+    name = "",
+    role = c("senior", "senior", "senior", "nurse_2", "nurse_2", "nurse_2"),
+    part_time_pct = 100L,
+    active_from = as.Date("2024-01-01"),
+    active_to = as.Date("9999-12-31")
+  )
+  cal <- tibble::tibble(
+    date = as.Date(c("2026-06-01", "2026-06-02", "2026-06-03")),
+    weekday = c(1L, 2L, 3L),
+    is_weekend = FALSE,
+    is_holiday = FALSE,
+    slot_kind = "weekday",
+    slots = list(
+      slots_for_kind("weekday"),
+      slots_for_kind("weekday"),
+      slots_for_kind("weekday")
+    )
+  )
+  rules <- load_rules(rules_path)
+  ctx <- list(
+    operators = dplyr::mutate(ops, operator_id = surname, op_idx = seq_len(6)),
+    calendar = dplyr::mutate(cal, day_idx = seq_len(3)),
+    rules = rules,
+    absent_idx = matrix(integer(0), ncol = 2),
+    carry_in = tibble::tibble(op_idx = 1:6, operator_id = ops$surname, carry_count = 0L)
+  )
+  m <- build_milp(ctx)
+  sol <- ompr::solve_model(m, ompr.roi::with_ROI(solver = "glpk"))
+  expect_true(ompr::solver_status(sol) %in% c("optimal", "success"))
+})
