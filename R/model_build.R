@@ -129,5 +129,27 @@ build_milp <- function(ctx) {
     }
   }
 
+  # H2: only seniors take role_pos = 1 (first)
+  senior_idx <- ctx$operators$op_idx[ctx$operators$role == "senior"]
+  junior_idx <- setdiff(seq_len(N_op), senior_idx)
+  for (op_j in junior_idx) {
+    m <- ompr::add_constraint(m,
+      ompr::sum_over(x[op_j, d, s, 1], d = 1:N_day, s = 1:max_slots) == 0
+    )
+  }
+  # H3: any operator may take role_pos = 2 -- no extra constraint needed,
+  # variables already exist for all ops.
+
+  # H4: absent (op, day) pairs are zeroed across all slots/roles.
+  if (nrow(ctx$absent_idx) > 0) {
+    for (i in seq_len(nrow(ctx$absent_idx))) {
+      op_a  <- ctx$absent_idx[i, 1]
+      day_a <- ctx$absent_idx[i, 2]
+      m <- ompr::add_constraint(m,
+        ompr::sum_over(x[op_a, day_a, s, rp], s = 1:max_slots, rp = 1:2) == 0
+      )
+    }
+  }
+
   m
 }
