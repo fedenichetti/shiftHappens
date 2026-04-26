@@ -65,11 +65,12 @@ build_model_context <- function(wb, rules, cal) {
     dplyr::mutate(carry_count = tidyr::replace_na(.data$carry_count, 0L))
 
   list(
-    operators  = ops,
-    calendar   = cal,
-    rules      = rules,
-    absent_idx = absent,
-    carry_in   = carry_full
+    operators   = ops,
+    calendar    = cal,
+    rules       = rules,
+    absent_idx  = absent,
+    carry_in    = carry_full,
+    preferences = wb$preferences
   )
 }
 
@@ -153,31 +154,35 @@ build_milp <- function(ctx) {
 
   # H5: weekday rest. For each operator and each consecutive (day d, d+1)
   # both being weekdays: sum of all assignments on d + sum on d+1 <= 1.
-  for (op_i in 1:N_op) {
-    for (d in 1:(N_day - 1)) {
-      both_weekday <- (ctx$calendar$slot_kind[d] == "weekday") &&
-                      (ctx$calendar$slot_kind[d + 1] == "weekday")
-      if (!both_weekday) next
-      d_next <- d + 1L
-      m <- ompr::add_constraint(m,
-        ompr::sum_over(x[op_i, d, s, rp], s = 1:max_slots, rp = 1:2) +
-        ompr::sum_over(x[op_i, d_next, s, rp], s = 1:max_slots, rp = 1:2) <= 1
-      )
+  if (N_day >= 2) {
+    for (op_i in 1:N_op) {
+      for (d in 1:(N_day - 1)) {
+        both_weekday <- (ctx$calendar$slot_kind[d] == "weekday") &&
+                        (ctx$calendar$slot_kind[d + 1] == "weekday")
+        if (!both_weekday) next
+        d_next <- d + 1L
+        m <- ompr::add_constraint(m,
+          ompr::sum_over(x[op_i, d, s, rp], s = 1:max_slots, rp = 1:2) +
+          ompr::sum_over(x[op_i, d_next, s, rp], s = 1:max_slots, rp = 1:2) <= 1
+        )
+      }
     }
   }
 
   # H6: post-weekend rest. If day d is weekend/holiday and d+1 is weekday,
   # the operator can't do both.
-  for (op_i in 1:N_op) {
-    for (d in 1:(N_day - 1)) {
-      d_we <- ctx$calendar$slot_kind[d] %in% c("weekend", "holiday")
-      next_wd <- ctx$calendar$slot_kind[d + 1] == "weekday"
-      if (!(d_we && next_wd)) next
-      d_next <- d + 1L
-      m <- ompr::add_constraint(m,
-        ompr::sum_over(x[op_i, d, s, rp], s = 1:max_slots, rp = 1:2) +
-        ompr::sum_over(x[op_i, d_next, s, rp], s = 1:max_slots, rp = 1:2) <= 1
-      )
+  if (N_day >= 2) {
+    for (op_i in 1:N_op) {
+      for (d in 1:(N_day - 1)) {
+        d_we <- ctx$calendar$slot_kind[d] %in% c("weekend", "holiday")
+        next_wd <- ctx$calendar$slot_kind[d + 1] == "weekday"
+        if (!(d_we && next_wd)) next
+        d_next <- d + 1L
+        m <- ompr::add_constraint(m,
+          ompr::sum_over(x[op_i, d, s, rp], s = 1:max_slots, rp = 1:2) +
+          ompr::sum_over(x[op_i, d_next, s, rp], s = 1:max_slots, rp = 1:2) <= 1
+        )
+      }
     }
   }
 
@@ -206,6 +211,82 @@ build_milp <- function(ctx) {
             ompr::sum_over(x[op_i, d, s, rp], s = night_slots, rp = 1:2) +
             ompr::sum_over(x[op_i, d_next, s, rp], s = next_day_slots, rp = 1:2) <= 1
           )
+        }
+      }
+    }
+  }
+
+  # H8: each operator works at most (total_weekends - min_free) weekends.
+  # A weekend is identified by ISO week (so Sat + Sun group together).
+  weekend_days <- ctx$calendar$day_idx[ctx$calendar$is_weekend &
+                                         !ctx$calendar$is_holiday]
+  if (length(weekend_days) > 0) {
+    weekend_groups <- split(
+      weekend_days,
+      format(ctx$calendar$date[ctx$calendar$day_idx %in% weekend_days], "%G-W%V")
+    )
+    total_weekends <- length(weekend_groups)
+    N_w <- total_weekends
+    cap <- max(0L, total_weekends - ctx$rules$limits$min_free_weekends_per_month)
+    # Add the auxiliary variable once over the full (op, w) domain.
+    m <- ompr::add_variable(m,
+      weekend_worked[op_w, w_idx],
+      op_w = 1:N_op, w_idx = 1:N_w, type = "binary")
+    for (op_i in 1:N_op) {
+      for (w in seq_along(weekend_groups)) {
+        days_in_w <- weekend_groups[[w]]
+        bigM <- max_slots * 2L * length(days_in_w)
+        # BigM link: sum of x in this weekend group <= M * weekend_worked
+        m <- ompr::add_constraint(m,
+          ompr::sum_over(x[op_i, d, s, rp],
+                         d = days_in_w, s = 1:max_slots, rp = 1:2) <=
+            bigM * weekend_worked[op_i, w]
+        )
+      }
+      m <- ompr::add_constraint(m,
+        ompr::sum_over(weekend_worked[op_i, w], w = 1:N_w) <= cap
+      )
+    }
+  }
+
+  # H9: senior monthly cap (counted as role_pos = 1 only).
+  senior_cap <- ctx$rules$limits$senior_max_per_month
+  for (op_i in senior_idx) {
+    m <- ompr::add_constraint(m,
+      ompr::sum_over(x[op_i, d, s, 1], d = 1:N_day, s = 1:max_slots) <= senior_cap
+    )
+  }
+
+  # H10: hard preferences (preferences$hard == TRUE) zero matching slots.
+  if (!is.null(ctx$preferences) && nrow(ctx$preferences) > 0) {
+    for (i in seq_len(nrow(ctx$preferences))) {
+      pref <- ctx$preferences[i, ]
+      if (!isTRUE(pref$hard)) next
+      op_match <- ctx$operators$op_idx[
+        ctx$operators$operator_id == pref$operator_id |
+        ctx$operators$surname == pref$operator_id
+      ]
+      if (length(op_match) == 0) next
+      day_match <- if (is.na(pref$weekday)) {
+        seq_len(N_day)
+      } else {
+        ctx$calendar$day_idx[ctx$calendar$weekday == pref$weekday]
+      }
+      for (op_a in op_match) {
+        for (d in day_match) {
+          slots_today <- ctx$calendar$slots[[d]]
+          slot_match <- if (is.na(pref$slot_type)) {
+            seq_len(nrow(slots_today))
+          } else {
+            which(slots_today$period == pref$slot_type)
+          }
+          if (length(slot_match) == 0) next
+          if (pref$polarity == "avoid") {
+            m <- ompr::add_constraint(m,
+              ompr::sum_over(x[op_a, d, s, rp], s = slot_match, rp = 1:2) == 0
+            )
+          }
+          # "prefer + hard" rare; v1 doesn't enforce as a must-work.
         }
       }
     }
