@@ -1,0 +1,25 @@
+unit:
+  name: "Test Unit"
+  locale: "it"
+roles:
+  primary: "senior"
+  secondary: ["nurse_2", "oss_2"]
+limits:
+  senior_max_per_month: 7
+  min_free_weekends_per_month: 2
+  weekday_min_rest_days: 1
+  post_weekend_min_rest_days: 1
+  rolling_history_months: 1
+fairness_weights:
+  monthly_total: 100
+  weekend_holiday: 50
+  preference: 20
+  smoothness: 5
+solver:
+  time_limit_seconds: 30
+  fallback: "highs"
+holidays_extra: []
+ui:
+  primary_color: "#1ca5b8"
+  error_color: "#c4302b"
+  table_density: "compact"
