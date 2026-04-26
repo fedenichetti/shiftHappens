@@ -87,9 +87,9 @@ test_that("solver returns a feasible assignment for trivial input", {
 test_that("only seniors can be assigned to first role", {
   rules_path <- testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml")
   ops <- tibble::tibble(
-    surname = c("S1", "J1", "J2", "J3"),
+    surname = c("S1", "S2", "J1", "J2", "J3"),
     name = "",
-    role = c("senior", "nurse_2", "oss_2", "oss_2"),
+    role = c("senior", "senior", "nurse_2", "oss_2", "oss_2"),
     part_time_pct = 100L,
     active_from = as.Date("2024-01-01"),
     active_to = as.Date("9999-12-31")
@@ -108,14 +108,15 @@ test_that("only seniors can be assigned to first role", {
     calendar = dplyr::mutate(cal, day_idx = seq_len(nrow(cal))),
     rules = rules,
     absent_idx = matrix(integer(0), ncol = 2),
-    carry_in = tibble::tibble(op_idx = 1:4, operator_id = ops$surname, carry_count = 0L)
+    carry_in = tibble::tibble(op_idx = seq_len(nrow(ops)), operator_id = ops$surname, carry_count = 0L)
   )
   m <- build_milp(ctx)
   sol <- ompr::solve_model(m, ompr.roi::with_ROI(solver = "glpk"))
   expect_true(ompr::solver_status(sol) %in% c("optimal", "success"))
   vals <- ompr::get_solution(sol, x[op, day, slot, role_pos])
   vals <- vals[vals$value > 0.5, ]
-  expect_true(all(vals$op[vals$role_pos == 1L] == 1L))
+  # Only seniors (op_idx 1, 2) ever fill role_pos == 1.
+  expect_true(all(vals$op[vals$role_pos == 1L] %in% c(1L, 2L)))
 })
 
 test_that("absent operator is never assigned", {
@@ -150,4 +151,89 @@ test_that("absent operator is never assigned", {
   vals <- ompr::get_solution(sol, x[op, day, slot, role_pos])
   vals <- vals[vals$value > 0.5, ]
   expect_false(any(vals$op == 1L & vals$day == 1L))
+})
+
+test_that("H5 forbids same operator on two consecutive weekdays", {
+  rules_path <- testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml")
+  ops <- tibble::tibble(
+    surname = c("S1", "S2", "J1", "J2"),
+    name = "",
+    role = c("senior", "senior", "nurse_2", "nurse_2"),
+    part_time_pct = 100L,
+    active_from = as.Date("2024-01-01"),
+    active_to = as.Date("9999-12-31")
+  )
+  cal <- tibble::tibble(
+    date = as.Date(c("2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04")),
+    weekday = 1:4,
+    is_weekend = FALSE,
+    is_holiday = FALSE,
+    slot_kind = "weekday",
+    slots = list(slots_for_kind("weekday"), slots_for_kind("weekday"),
+                 slots_for_kind("weekday"), slots_for_kind("weekday"))
+  )
+  rules <- load_rules(rules_path)
+  ctx <- list(
+    operators = dplyr::mutate(ops, operator_id = surname, op_idx = seq_len(4)),
+    calendar = dplyr::mutate(cal, day_idx = seq_len(4)),
+    rules = rules,
+    absent_idx = matrix(integer(0), ncol = 2),
+    carry_in = tibble::tibble(op_idx = 1:4, operator_id = ops$surname, carry_count = 0L)
+  )
+  m <- build_milp(ctx)
+  sol <- ompr::solve_model(m, ompr.roi::with_ROI(solver = "glpk"))
+  expect_true(ompr::solver_status(sol) %in% c("optimal", "success"))
+  vals <- ompr::get_solution(sol, x[op, day, slot, role_pos])
+  vals <- vals[vals$value > 0.5, ]
+  for (op_i in 1:4) {
+    op_days <- sort(unique(vals$day[vals$op == op_i]))
+    if (length(op_days) >= 2) {
+      expect_true(min(diff(op_days)) >= 2L,
+                  info = paste("op", op_i, "has consecutive days"))
+    }
+  }
+})
+
+test_that("H7 forbids the three banned weekend combinations", {
+  rules_path <- testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml")
+  ops <- tibble::tibble(
+    surname = c("S1", "S2", "J1", "J2"),
+    name = "",
+    role = c("senior", "senior", "nurse_2", "nurse_2"),
+    part_time_pct = 100L,
+    active_from = as.Date("2024-01-01"),
+    active_to = as.Date("9999-12-31")
+  )
+  cal <- tibble::tibble(
+    date = as.Date(c("2026-06-06", "2026-06-07")),  # Sat, Sun
+    weekday = c(6L, 7L),
+    is_weekend = TRUE,
+    is_holiday = FALSE,
+    slot_kind = "weekend",
+    slots = list(slots_for_kind("weekend"), slots_for_kind("weekend"))
+  )
+  rules <- load_rules(rules_path)
+  ctx <- list(
+    operators = dplyr::mutate(ops, operator_id = surname, op_idx = seq_len(4)),
+    calendar = dplyr::mutate(cal, day_idx = seq_len(2)),
+    rules = rules,
+    absent_idx = matrix(integer(0), ncol = 2),
+    carry_in = tibble::tibble(op_idx = 1:4, operator_id = ops$surname, carry_count = 0L)
+  )
+  m <- build_milp(ctx)
+  sol <- ompr::solve_model(m, ompr.roi::with_ROI(solver = "glpk"))
+  expect_true(ompr::solver_status(sol) %in% c("optimal", "success"))
+  vals <- ompr::get_solution(sol, x[op, day, slot, role_pos])
+  vals <- vals[vals$value > 0.5, ]
+  # Slot indices for weekend day-of-week template:
+  #   1 = first/day, 2 = first/night, 3 = second/day, 4 = second/night
+  for (op_i in 1:4) {
+    sat_d <- any(vals$op == op_i & vals$day == 1 & vals$slot %in% c(1, 3))
+    sat_n <- any(vals$op == op_i & vals$day == 1 & vals$slot %in% c(2, 4))
+    sun_d <- any(vals$op == op_i & vals$day == 2 & vals$slot %in% c(1, 3))
+    sun_n <- any(vals$op == op_i & vals$day == 2 & vals$slot %in% c(2, 4))
+    expect_false(sat_d && sat_n)
+    expect_false(sat_n && sun_d)
+    expect_false(sun_d && sun_n)
+  }
 })

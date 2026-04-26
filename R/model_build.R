@@ -151,5 +151,65 @@ build_milp <- function(ctx) {
     }
   }
 
+  # H5: weekday rest. For each operator and each consecutive (day d, d+1)
+  # both being weekdays: sum of all assignments on d + sum on d+1 <= 1.
+  for (op_i in 1:N_op) {
+    for (d in 1:(N_day - 1)) {
+      both_weekday <- (ctx$calendar$slot_kind[d] == "weekday") &&
+                      (ctx$calendar$slot_kind[d + 1] == "weekday")
+      if (!both_weekday) next
+      d_next <- d + 1L
+      m <- ompr::add_constraint(m,
+        ompr::sum_over(x[op_i, d, s, rp], s = 1:max_slots, rp = 1:2) +
+        ompr::sum_over(x[op_i, d_next, s, rp], s = 1:max_slots, rp = 1:2) <= 1
+      )
+    }
+  }
+
+  # H6: post-weekend rest. If day d is weekend/holiday and d+1 is weekday,
+  # the operator can't do both.
+  for (op_i in 1:N_op) {
+    for (d in 1:(N_day - 1)) {
+      d_we <- ctx$calendar$slot_kind[d] %in% c("weekend", "holiday")
+      next_wd <- ctx$calendar$slot_kind[d + 1] == "weekday"
+      if (!(d_we && next_wd)) next
+      d_next <- d + 1L
+      m <- ompr::add_constraint(m,
+        ompr::sum_over(x[op_i, d, s, rp], s = 1:max_slots, rp = 1:2) +
+        ompr::sum_over(x[op_i, d_next, s, rp], s = 1:max_slots, rp = 1:2) <= 1
+      )
+    }
+  }
+
+  # H7: no 24h consecutive on weekend/holiday days. Forbid:
+  #   (day=d, period=day) AND (day=d, period=night)            -- same day
+  #   (day=d, period=night) AND (day=d+1, period=day)          -- night-then-day
+  for (op_i in 1:N_op) {
+    for (d in 1:N_day) {
+      if (ctx$calendar$slot_kind[d] == "weekday") next
+      slots_today <- ctx$calendar$slots[[d]]
+      day_slots   <- which(slots_today$period == "day")
+      night_slots <- which(slots_today$period == "night")
+      if (length(day_slots) > 0 && length(night_slots) > 0) {
+        m <- ompr::add_constraint(m,
+          ompr::sum_over(x[op_i, d, s, rp], s = day_slots, rp = 1:2) +
+          ompr::sum_over(x[op_i, d, s, rp], s = night_slots, rp = 1:2) <= 1
+        )
+      }
+      # cross-day: night of d + day of d+1 (if d+1 also non-weekday)
+      if (d < N_day && ctx$calendar$slot_kind[d + 1] != "weekday") {
+        d_next <- d + 1L
+        slots_next <- ctx$calendar$slots[[d_next]]
+        next_day_slots <- which(slots_next$period == "day")
+        if (length(night_slots) > 0 && length(next_day_slots) > 0) {
+          m <- ompr::add_constraint(m,
+            ompr::sum_over(x[op_i, d, s, rp], s = night_slots, rp = 1:2) +
+            ompr::sum_over(x[op_i, d_next, s, rp], s = next_day_slots, rp = 1:2) <= 1
+          )
+        }
+      }
+    }
+  }
+
   m
 }
