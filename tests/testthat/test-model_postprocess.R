@@ -96,3 +96,36 @@ test_that("postprocess returns NULL schedule when solve was not feasible", {
   expect_s3_class(out$diagnostics, "tbl_df")
   expect_true("solver_status" %in% out$diagnostics$field)
 })
+
+test_that("postprocess surfaces infeasibility_diagnosis when solver fails", {
+  # Real infeasible scenario: 1 senior absent on the only target day.
+  ops <- tibble::tibble(
+    surname = c("S1","J1","J2"),
+    name = "",
+    role = c("senior","nurse_2","nurse_2"),
+    part_time_pct = 100L,
+    active_from = as.Date("2024-01-01"),
+    active_to = as.Date("9999-12-31")
+  )
+  cal <- tibble::tibble(
+    date = as.Date("2026-06-01"),
+    weekday = 1L, is_weekend = FALSE, is_holiday = FALSE,
+    slot_kind = "weekday",
+    slots = list(slots_for_kind("weekday"))
+  )
+  rules <- load_rules(testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml"))
+  ctx <- list(
+    operators = dplyr::mutate(ops, operator_id = surname, op_idx = seq_len(3)),
+    calendar = dplyr::mutate(cal, day_idx = 1L),
+    rules = rules,
+    absent_idx = matrix(c(1L, 1L), ncol = 2, byrow = TRUE),
+    carry_in = tibble::tibble(op_idx = 1:3, operator_id = ops$surname, carry_count = 0L),
+    preferences = NULL
+  )
+  m <- build_milp(ctx)
+  res <- solve_milp(m, time_limit_seconds = 30L)
+  out <- postprocess_solution(res, ctx)
+  expect_true("infeasibility_diagnosis" %in% out$diagnostics$field)
+  diag_row <- out$diagnostics$value[out$diagnostics$field == "infeasibility_diagnosis"]
+  expect_match(diag_row, "absences|over-coverage|senior")
+})

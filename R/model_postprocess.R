@@ -119,7 +119,7 @@ postprocess_solution <- function(solve_result, ctx) {
 #' @return tibble (field, value)
 #' @noRd
 .build_diagnostics <- function(solve_result, ctx, sol) {
-  tibble::tibble(
+  base <- tibble::tibble(
     field = c("solver_status", "runtime_seconds", "objective_value"),
     value = c(
       solve_result$status %||% "unknown",
@@ -128,6 +128,22 @@ postprocess_solution <- function(solve_result, ctx) {
              "-", sprintf("%.2f", solve_result$objective_value))
     )
   )
+
+  # Spec §5.2.3: when infeasible, surface the relaxation suggestion from
+  # diagnose_infeasibility so the caposala knows which YAML knob to adjust.
+  feasible_states <- c("optimal", "success", "feasible")
+  if (!(solve_result$status %in% feasible_states) &&
+      !is.null(ctx$rules) && !is.null(ctx$operators)) {
+    diag <- tryCatch(diagnose_infeasibility(ctx), error = function(e) NULL)
+    if (!is.null(diag)) {
+      base <- dplyr::bind_rows(base, tibble::tibble(
+        field = "infeasibility_diagnosis",
+        value = paste0("[", diag$cause, "] ", diag$suggestion)
+      ))
+    }
+  }
+
+  base
 }
 
 `%||%` <- function(a, b) if (is.null(a)) b else a

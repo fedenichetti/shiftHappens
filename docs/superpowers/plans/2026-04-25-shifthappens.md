@@ -3833,6 +3833,12 @@ git status
 
   Extend `validate_inputs()` to add four warning rows (severity = "warning") when the relevant condition is met. Add tests for each. None of these block generation — they're surfaced in the UI's yellow "Avvisi" panel for the caposala's awareness. Schedule when convenient; not on the critical path.
 
+- **`relaxed_soft_preferences` diagnostics row** — spec §5.2.3 lists this row as part of the diagnostics sheet (operator_id × pref-row-index pairs that the solver violated, with weight contribution). Phase 8's `postprocess_solution()` does NOT surface this. Reason: extracting per-preference penalty values requires `solve_milp()` to return the auxiliary `pref_pen[p_idx]` ompr variable values alongside the main `x` solution. That's a larger surface-area change. Logged as Task 8.2 (follow-up).
+
+  ### Task 8.2 (follow-up): surface relaxed soft preferences in diagnostics
+
+  Extend `solve_milp()` to also extract `pref_pen` aux variables from the ompr solution (when present), and pass them to `postprocess_solution()`. Add a `relaxed_soft_preferences` row to `.build_diagnostics()` listing each violated preference (operator_id, weekday, slot_type) with its penalty weight contribution. Useful for the caposala to see which preferences the solver had to violate to make the schedule feasible.
+
 **Placeholder scan:** none of the forbidden patterns ("TBD", "TODO", "implement later", "fill in details", "Add appropriate error handling") appear in this plan. Every step has either complete code or an exact command. The single intentional deferral (smoothness tier) is documented in code comments and called out here.
 
 **Type consistency:** `operator_id`, `op_idx`, `day_idx`, `slot_kind`, `role` (`senior`/`nurse_2`/`oss_2`), `role_pos` (1=first, 2=second), `period` (`day`/`night`), `slot_type` (preferences enum), and `polarity` (`avoid`/`prefer`) are used consistently across tasks. Function names: `easter_sunday`, `italian_holidays`, `holidays_for_year`, `month_days`, `slots_for_kind`, `build_calendar`, `load_rules`, `read_workbook`, `validate_inputs`, `build_model_context`, `build_milp`, `solve_milp`, `diagnose_infeasibility`, `postprocess_solution`, `write_output_workbook`. Each is defined exactly once and referenced consistently.
