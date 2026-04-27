@@ -133,7 +133,8 @@ postprocess_solution <- function(solve_result, ctx) {
   # diagnose_infeasibility so the caposala knows which YAML knob to adjust.
   feasible_states <- c("optimal", "success", "feasible")
   if (!(solve_result$status %in% feasible_states) &&
-      !is.null(ctx$rules) && !is.null(ctx$operators)) {
+      !is.null(ctx$rules$solver$time_limit_seconds) &&
+      !is.null(ctx$operators)) {
     diag <- tryCatch(diagnose_infeasibility(ctx), error = function(e) NULL)
     if (!is.null(diag)) {
       base <- dplyr::bind_rows(base, tibble::tibble(
