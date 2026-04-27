@@ -1,0 +1,10 @@
+^.*\.Rproj$
+^\.Rproj\.user$
+^\.git$
+^\.github$
+^\.claude$
+^renv$
+^renv\.lock$
+^manifest\.json$
+^docs$
+^README\.md$
