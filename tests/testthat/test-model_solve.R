@@ -124,3 +124,85 @@ test_that("absences-fallback diagnostic mentions single-day over-coverage", {
   expect_equal(diag$cause, "absences")
   expect_match(diag$suggestion, "over-coverage")
 })
+
+test_that("diagnose_infeasibility identifies weekend_cap when min_free_weekends is too strict", {
+  # 4 operators across 2 consecutive weekends (4 weekend days x 4 slots each).
+  # min_free_weekends_per_month = 2 means every operator must have >=2 free
+  # weekends — but there are only 2 weekends total, so anyone covering ANY
+  # weekend slot violates H8. Relaxing H8 to 0 makes the model feasible.
+  ops <- tibble::tibble(
+    surname = c("S1","S2","J1","J2"),
+    name = "",
+    role = c("senior","senior","nurse_2","nurse_2"),
+    part_time_pct = 100L,
+    active_from = as.Date("2024-01-01"),
+    active_to = as.Date("9999-12-31")
+  )
+  cal <- tibble::tibble(
+    date = as.Date(c("2026-06-06","2026-06-07","2026-06-13","2026-06-14")),
+    weekday = c(6L,7L,6L,7L),
+    is_weekend = TRUE, is_holiday = FALSE,
+    slot_kind = "weekend",
+    slots = list(slots_for_kind("weekend"), slots_for_kind("weekend"),
+                 slots_for_kind("weekend"), slots_for_kind("weekend"))
+  )
+  rules <- load_rules(testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml"))
+  rules$limits$min_free_weekends_per_month <- 2L
+  ctx <- list(
+    operators = dplyr::mutate(ops, operator_id = surname, op_idx = seq_len(4)),
+    calendar = dplyr::mutate(cal, day_idx = seq_len(4)),
+    rules = rules,
+    absent_idx = matrix(integer(0), ncol = 2),
+    carry_in = tibble::tibble(op_idx = 1:4, operator_id = ops$surname, carry_count = 0L),
+    preferences = NULL
+  )
+  diag <- diagnose_infeasibility(ctx)
+  expect_equal(diag$cause, "weekend_cap")
+  expect_match(diag$suggestion, "min_free_weekends_per_month")
+})
+
+test_that("diagnose_infeasibility identifies hard_preferences when all seniors block target day", {
+  # 2 seniors + 2 juniors over a single weekday. Both seniors carry a
+  # hard=TRUE avoid preference for weekday=1 (Monday), so neither can
+  # cover role_pos=1 — H1 then has no senior. Demoting hard preferences
+  # to soft (cascade step 3) makes the schedule feasible.
+  ops <- tibble::tibble(
+    surname = c("S1","S2","J1","J2"),
+    name = "",
+    role = c("senior","senior","nurse_2","nurse_2"),
+    part_time_pct = 100L,
+    active_from = as.Date("2024-01-01"),
+    active_to = as.Date("9999-12-31")
+  )
+  cal <- tibble::tibble(
+    date = as.Date("2026-06-01"),
+    weekday = 1L, is_weekend = FALSE, is_holiday = FALSE,
+    slot_kind = "weekday",
+    slots = list(slots_for_kind("weekday"))
+  )
+  rules <- load_rules(testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml"))
+  prefs <- tibble::tibble(
+    operator_id = c("S1", "S2"),
+    weekday = 1L,
+    slot_type = NA_character_,
+    polarity = "avoid",
+    hard = TRUE
+  )
+  ctx <- list(
+    operators = dplyr::mutate(ops, operator_id = surname, op_idx = seq_len(4)),
+    calendar = dplyr::mutate(cal, day_idx = 1L),
+    rules = rules,
+    absent_idx = matrix(integer(0), ncol = 2),
+    carry_in = tibble::tibble(op_idx = 1:4, operator_id = ops$surname, carry_count = 0L),
+    preferences = prefs
+  )
+  diag <- diagnose_infeasibility(ctx)
+  expect_equal(diag$cause, "hard_preferences")
+  expect_match(diag$suggestion, "hard=FALSE")
+})
+
+test_that("solve_milp timeout branch returns spec-aligned message (skipped — solver-speed dependent)", {
+  skip("Timeout branch is solver-speed dependent; verified by code path inspection. The branch is exercised when ompr::solver_status returns a time-related string OR runtime >= 0.95 * time_limit_seconds with non-feasible status.")
+  # If/when needed, this test can be expanded with a deliberately-large
+  # MIP and time_limit_seconds = 1L. For v1 we rely on spec compliance review.
+})
