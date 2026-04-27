@@ -12,6 +12,7 @@ mod_settings_ui <- function(id) {
 
 mod_settings_server <- function(id, parsed, issues) {
   shiny::moduleServer(id, function(input, output, session) {
+    ns <- session$ns
     can_generate <- shiny::reactive({
       !is.null(parsed()) && (
         is.null(issues()) ||
@@ -19,7 +20,7 @@ mod_settings_server <- function(id, parsed, issues) {
       )
     })
     shiny::observe({
-      shinyjs::toggleState("generate", condition = can_generate())
+      shinyjs::toggleState(ns("generate"), condition = can_generate())
     })
     list(
       generate = shiny::reactive(input$generate),

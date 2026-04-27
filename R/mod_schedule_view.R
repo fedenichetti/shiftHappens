@@ -69,6 +69,7 @@ mod_schedule_view_server <- function(id, result, ctx) {
         sprintf("shifthappens_%s.xlsx", format(Sys.Date(), "%Y-%m-%d"))
       },
       content = function(file) {
+        shiny::req(result())
         r <- result()
         c <- ctx()
         holidays <- if (!is.null(c)) {
