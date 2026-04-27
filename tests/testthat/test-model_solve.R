@@ -93,3 +93,34 @@ test_that("diagnose_infeasibility identifies senior cap as the cause", {
   expect_equal(diag$cause, "senior_cap")
   expect_match(diag$suggestion, "senior_max_per_month")
 })
+
+test_that("absences-fallback diagnostic mentions single-day over-coverage", {
+  # 1 senior + 2 juniors. Senior absent on the only target day.
+  # H8/H9/H10 relaxation can't help — there is no senior available at all.
+  ops <- tibble::tibble(
+    surname = c("S1","J1","J2"),
+    name = "",
+    role = c("senior","nurse_2","nurse_2"),
+    part_time_pct = 100L,
+    active_from = as.Date("2024-01-01"),
+    active_to = as.Date("9999-12-31")
+  )
+  cal <- tibble::tibble(
+    date = as.Date("2026-06-01"),
+    weekday = 1L, is_weekend = FALSE, is_holiday = FALSE,
+    slot_kind = "weekday",
+    slots = list(slots_for_kind("weekday"))
+  )
+  rules <- load_rules(testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml"))
+  ctx <- list(
+    operators = dplyr::mutate(ops, operator_id = surname, op_idx = seq_len(3)),
+    calendar = dplyr::mutate(cal, day_idx = 1L),
+    rules = rules,
+    absent_idx = matrix(c(1L, 1L), ncol = 2, byrow = TRUE),  # S1 absent day 1
+    carry_in = tibble::tibble(op_idx = 1:3, operator_id = ops$surname, carry_count = 0L),
+    preferences = NULL
+  )
+  diag <- diagnose_infeasibility(ctx)
+  expect_equal(diag$cause, "absences")
+  expect_match(diag$suggestion, "over-coverage")
+})

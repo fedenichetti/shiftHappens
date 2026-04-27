@@ -37,22 +37,46 @@ solve_milp <- function(model, time_limit_seconds = 30L) {
 
   status <- ompr::solver_status(sol)
   feasible_states <- c("optimal", "success", "feasible")
-  obj <- if (status %in% feasible_states) {
-    tryCatch(ompr::objective_value(sol), error = function(e) NA_real_)
-  } else NA_real_
-  solution_df <- if (status %in% feasible_states) {
+  infeasible_states <- c("infeasible", "no solution")
+
+  if (status %in% feasible_states) {
+    obj <- tryCatch(ompr::objective_value(sol), error = function(e) NA_real_)
     df <- ompr::get_solution(sol, x[op, day, slot, role_pos])
     df <- df[df$value > 0.5, c("op", "day", "slot", "role_pos")]
-    tibble::as_tibble(df)
-  } else NULL
+    return(list(
+      status = status,
+      runtime_seconds = runtime,
+      objective_value = obj,
+      solution = tibble::as_tibble(df)
+    ))
+  }
+
+  # Detect timeout: either the solver returned a time-related status string,
+  # or runtime ran up against the configured time_limit_seconds and we did
+  # not get an explicit infeasibility proof.
+  timeout_hit <-
+    grepl("time", tolower(status %||% "")) ||
+    (runtime >= time_limit_seconds * 0.95 && !(status %in% infeasible_states))
+
+  if (timeout_hit) {
+    return(list(
+      status = "timeout",
+      runtime_seconds = runtime,
+      objective_value = NA_real_,
+      solution = NULL,
+      error_message = "Solver took too long. Consider reducing fairness weights or removing edge-case absences."
+    ))
+  }
 
   list(
     status = status,
     runtime_seconds = runtime,
-    objective_value = obj,
-    solution = solution_df
+    objective_value = NA_real_,
+    solution = NULL
   )
 }
+
+`%||%` <- function(a, b) if (is.null(a)) b else a
 
 #' Diagnose why a model is infeasible by removing relaxable hard
 #' constraints one at a time.
@@ -140,8 +164,9 @@ diagnose_infeasibility <- function(ctx) {
     cause = "absences",
     suggestion = paste(
       "Even with all soft rules relaxed the schedule is infeasible.",
-      "Review absences sheet: too many operators are unavailable on",
-      "the same dates, or the operator pool is too small for the month."
+      "Review absences for over-coverage of any single day (too many",
+      "operators unavailable on the same date), or check that the",
+      "operator pool is large enough for the month."
     )
   )
 }
