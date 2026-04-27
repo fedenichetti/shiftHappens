@@ -14,7 +14,7 @@ test_that("postprocess produces schedule and summary tibbles", {
     slots = list(slots_for_kind("weekday"), slots_for_kind("weekday"),
                  slots_for_kind("weekday"))
   )
-  rules <- load_rules(testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml"))
+  rules <- load_rules(system.file("examples", "rules_minimal.yaml", package = "shifthappens"))
   ctx <- list(
     operators = dplyr::mutate(ops, operator_id = surname, op_idx = seq_len(6)),
     calendar = dplyr::mutate(cal, day_idx = seq_len(3)),
@@ -56,7 +56,7 @@ test_that("postprocess formats weekend cells as 'X / Y'", {
     slot_kind = "weekend",
     slots = list(slots_for_kind("weekend"))
   )
-  rules <- load_rules(testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml"))
+  rules <- load_rules(system.file("examples", "rules_minimal.yaml", package = "shifthappens"))
   rules$limits$min_free_weekends_per_month <- 0L  # only 1 weekend in fixture
   ctx <- list(
     operators = dplyr::mutate(ops, operator_id = surname, op_idx = seq_len(4)),
@@ -113,7 +113,7 @@ test_that("postprocess surfaces infeasibility_diagnosis when solver fails", {
     slot_kind = "weekday",
     slots = list(slots_for_kind("weekday"))
   )
-  rules <- load_rules(testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml"))
+  rules <- load_rules(system.file("examples", "rules_minimal.yaml", package = "shifthappens"))
   ctx <- list(
     operators = dplyr::mutate(ops, operator_id = surname, op_idx = seq_len(3)),
     calendar = dplyr::mutate(cal, day_idx = 1L),

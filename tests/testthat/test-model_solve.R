@@ -14,7 +14,7 @@ test_that("solve_milp returns optimal/success status for trivial input", {
     slots = list(slots_for_kind("weekday"), slots_for_kind("weekday"),
                  slots_for_kind("weekday"))
   )
-  rules <- load_rules(testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml"))
+  rules <- load_rules(system.file("examples", "rules_minimal.yaml", package = "shifthappens"))
   ctx <- list(
     operators = dplyr::mutate(ops, operator_id = surname, op_idx = seq_len(6)),
     calendar = dplyr::mutate(cal, day_idx = seq_len(3)),
@@ -46,7 +46,7 @@ test_that("solve_milp returns infeasible status when infeasible", {
     slot_kind = "weekday",
     slots = list(slots_for_kind("weekday"))
   )
-  rules <- load_rules(testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml"))
+  rules <- load_rules(system.file("examples", "rules_minimal.yaml", package = "shifthappens"))
   ctx <- list(
     operators = dplyr::mutate(ops, operator_id = surname, op_idx = seq_len(2)),
     calendar = dplyr::mutate(cal, day_idx = 1L),
@@ -79,7 +79,7 @@ test_that("diagnose_infeasibility identifies senior cap as the cause", {
     slot_kind = "weekday",
     slots = rep(list(slots_for_kind("weekday")), 3)
   )
-  rules <- load_rules(testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml"))
+  rules <- load_rules(system.file("examples", "rules_minimal.yaml", package = "shifthappens"))
   rules$limits$senior_max_per_month <- 1L
   ctx <- list(
     operators = dplyr::mutate(ops, operator_id = surname, op_idx = seq_len(4)),
@@ -111,7 +111,7 @@ test_that("absences-fallback diagnostic mentions single-day over-coverage", {
     slot_kind = "weekday",
     slots = list(slots_for_kind("weekday"))
   )
-  rules <- load_rules(testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml"))
+  rules <- load_rules(system.file("examples", "rules_minimal.yaml", package = "shifthappens"))
   ctx <- list(
     operators = dplyr::mutate(ops, operator_id = surname, op_idx = seq_len(3)),
     calendar = dplyr::mutate(cal, day_idx = 1L),
@@ -146,7 +146,7 @@ test_that("diagnose_infeasibility identifies weekend_cap when min_free_weekends 
     slots = list(slots_for_kind("weekend"), slots_for_kind("weekend"),
                  slots_for_kind("weekend"), slots_for_kind("weekend"))
   )
-  rules <- load_rules(testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml"))
+  rules <- load_rules(system.file("examples", "rules_minimal.yaml", package = "shifthappens"))
   rules$limits$min_free_weekends_per_month <- 2L
   ctx <- list(
     operators = dplyr::mutate(ops, operator_id = surname, op_idx = seq_len(4)),
@@ -180,7 +180,7 @@ test_that("diagnose_infeasibility identifies hard_preferences when all seniors b
     slot_kind = "weekday",
     slots = list(slots_for_kind("weekday"))
   )
-  rules <- load_rules(testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml"))
+  rules <- load_rules(system.file("examples", "rules_minimal.yaml", package = "shifthappens"))
   prefs <- tibble::tibble(
     operator_id = c("S1", "S2"),
     weekday = 1L,

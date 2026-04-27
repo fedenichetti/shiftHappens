@@ -1,6 +1,6 @@
 test_that("build_model_context returns deterministic indices", {
-  fixture <- testthat::test_path("..", "..", "inst", "examples", "may2026_workbook.xlsx")
-  rules_path <- testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml")
+  fixture <- system.file("examples", "may2026_workbook.xlsx", package = "shifthappens")
+  rules_path <- system.file("examples", "rules_minimal.yaml", package = "shifthappens")
   wb <- read_workbook(fixture)
   rules <- load_rules(rules_path)
   cal <- build_calendar(2026, 6, holidays_extra = rules$holidays_extra)
@@ -16,8 +16,8 @@ test_that("build_model_context returns deterministic indices", {
 })
 
 test_that("build_model_context flags absent (op, day) pairs", {
-  fixture <- testthat::test_path("..", "..", "inst", "examples", "may2026_workbook.xlsx")
-  rules_path <- testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml")
+  fixture <- system.file("examples", "may2026_workbook.xlsx", package = "shifthappens")
+  rules_path <- system.file("examples", "rules_minimal.yaml", package = "shifthappens")
   wb <- read_workbook(fixture)
   wb$absences <- tibble::tibble(
     operator_id = "Carniti",
@@ -36,8 +36,8 @@ test_that("build_model_context flags absent (op, day) pairs", {
 })
 
 test_that("build_milp produces an ompr model object", {
-  fixture <- testthat::test_path("..", "..", "inst", "examples", "may2026_workbook.xlsx")
-  rules_path <- testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml")
+  fixture <- system.file("examples", "may2026_workbook.xlsx", package = "shifthappens")
+  rules_path <- system.file("examples", "rules_minimal.yaml", package = "shifthappens")
   wb <- read_workbook(fixture)
   rules <- load_rules(rules_path)
   cal <- build_calendar(2026, 6, holidays_extra = list())
@@ -50,7 +50,7 @@ test_that("build_milp produces an ompr model object", {
 })
 
 test_that("solver returns a feasible assignment for trivial input", {
-  rules_path <- testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml")
+  rules_path <- system.file("examples", "rules_minimal.yaml", package = "shifthappens")
   ops <- tibble::tibble(
     surname = c("S1", "S2", "S3", "J1", "J2", "J3"),
     name = "",
@@ -85,7 +85,7 @@ test_that("solver returns a feasible assignment for trivial input", {
 })
 
 test_that("only seniors can be assigned to first role", {
-  rules_path <- testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml")
+  rules_path <- system.file("examples", "rules_minimal.yaml", package = "shifthappens")
   ops <- tibble::tibble(
     surname = c("S1", "S2", "J1", "J2", "J3"),
     name = "",
@@ -120,7 +120,7 @@ test_that("only seniors can be assigned to first role", {
 })
 
 test_that("absent operator is never assigned", {
-  rules_path <- testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml")
+  rules_path <- system.file("examples", "rules_minimal.yaml", package = "shifthappens")
   ops <- tibble::tibble(
     surname = c("S1", "S2", "J1", "J2"),
     name = "",
@@ -154,7 +154,7 @@ test_that("absent operator is never assigned", {
 })
 
 test_that("H5 forbids same operator on two consecutive weekdays", {
-  rules_path <- testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml")
+  rules_path <- system.file("examples", "rules_minimal.yaml", package = "shifthappens")
   ops <- tibble::tibble(
     surname = c("S1", "S2", "J1", "J2"),
     name = "",
@@ -195,7 +195,7 @@ test_that("H5 forbids same operator on two consecutive weekdays", {
 })
 
 test_that("H7 forbids the three banned weekend combinations", {
-  rules_path <- testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml")
+  rules_path <- system.file("examples", "rules_minimal.yaml", package = "shifthappens")
   ops <- tibble::tibble(
     surname = c("S1", "S2", "J1", "J2"),
     name = "",
@@ -240,7 +240,7 @@ test_that("H7 forbids the three banned weekend combinations", {
 })
 
 test_that("H8 enforces min_free_weekends_per_month", {
-  rules_path <- testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml")
+  rules_path <- system.file("examples", "rules_minimal.yaml", package = "shifthappens")
   # Pool sized so the cap (1 worked weekend / op) is easy to satisfy:
   # 2 weekends * 4 senior-first slots = 8 senior covers; with H7 each op
   # covers ~2 weekend slots; 4+ seniors suffice. Zero out the fairness
@@ -295,7 +295,7 @@ test_that("H8 enforces min_free_weekends_per_month", {
 })
 
 test_that("H10 hard preference excludes operator from matching slot", {
-  rules_path <- testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml")
+  rules_path <- system.file("examples", "rules_minimal.yaml", package = "shifthappens")
   ops <- tibble::tibble(
     surname = c("S1", "S2", "S3", "J1", "J2", "J3"),
     name = "",
@@ -335,7 +335,7 @@ test_that("H10 hard preference excludes operator from matching slot", {
 })
 
 test_that("soft objective minimizes senior dispersion", {
-  rules_path <- testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml")
+  rules_path <- system.file("examples", "rules_minimal.yaml", package = "shifthappens")
   ops <- tibble::tibble(
     surname = c("S1", "S2", "S3", "S4", "J1", "J2", "J3", "J4"),
     name = "",
@@ -375,7 +375,7 @@ test_that("soft objective minimizes senior dispersion", {
 })
 
 test_that("H6 forbids weekend-then-Monday for the same operator", {
-  rules_path <- testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml")
+  rules_path <- system.file("examples", "rules_minimal.yaml", package = "shifthappens")
   # Use a roomier pool so the model has at least one senior free from Sunday
   # to cover Monday's first-role slot (otherwise H6 leaves no senior).
   ops <- tibble::tibble(
@@ -420,7 +420,7 @@ test_that("H6 forbids weekend-then-Monday for the same operator", {
 })
 
 test_that("H9 caps each senior at senior_max_per_month role-first slots", {
-  rules_path <- testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml")
+  rules_path <- system.file("examples", "rules_minimal.yaml", package = "shifthappens")
   # 2 seniors over 4 weekdays. Cap = 2 each. With 4 first-role slots needed,
   # the only feasible split is exactly 2 each.
   ops <- tibble::tibble(
@@ -459,7 +459,7 @@ test_that("H9 caps each senior at senior_max_per_month role-first slots", {
 })
 
 test_that("Tier 2 weekend equity factors in carry-in counts", {
-  rules_path <- testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml")
+  rules_path <- system.file("examples", "rules_minimal.yaml", package = "shifthappens")
   # 2 seniors + 2 juniors over 1 weekend. S1 carries 2 prior weekend
   # assignments, S2 carries 0. Tier 2 should pull more weekend slots toward
   # S2 to balance the (target + carry-in) total.
@@ -509,7 +509,7 @@ test_that("Tier 2 weekend equity factors in carry-in counts", {
 })
 
 test_that("Tier 3 soft preference reduces matching slot probability", {
-  rules_path <- testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml")
+  rules_path <- system.file("examples", "rules_minimal.yaml", package = "shifthappens")
   # 2 seniors + 2 juniors over 2 weekdays (Mon, Tue). Senior S1 has soft
   # avoid for weekday=1 (Mon). With high preference weight, the optimizer
   # should put S2 on Mon instead of S1.

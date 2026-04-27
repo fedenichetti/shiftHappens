@@ -1,4 +1,4 @@
-fixture <- testthat::test_path("..", "..", "inst", "examples", "may2026_workbook.xlsx")
+fixture <- system.file("examples", "may2026_workbook.xlsx", package = "shifthappens")
 
 test_that("validate_inputs returns no errors on the May 2026 fixture", {
   wb <- read_workbook(fixture)

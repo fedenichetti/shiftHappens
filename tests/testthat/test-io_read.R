@@ -1,4 +1,4 @@
-fixture <- testthat::test_path("..", "..", "inst", "examples", "may2026_workbook.xlsx")
+fixture <- system.file("examples", "may2026_workbook.xlsx", package = "shifthappens")
 
 test_that("read_workbook returns a list of 5 named tibbles", {
   wb <- read_workbook(fixture)

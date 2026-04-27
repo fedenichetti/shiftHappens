@@ -1,5 +1,5 @@
 test_that("load_rules reads valid YAML", {
-  r <- load_rules(testthat::test_path("..", "..", "inst", "examples", "rules_minimal.yaml"))
+  r <- load_rules(system.file("examples", "rules_minimal.yaml", package = "shifthappens"))
   expect_equal(r$unit$name, "Test Unit")
   expect_equal(r$limits$senior_max_per_month, 7L)
   expect_equal(r$fairness_weights$monthly_total, 100L)
