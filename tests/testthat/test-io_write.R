@@ -41,7 +41,7 @@ test_that("write_output_workbook round-trips schedule + summary", {
   unlink(out_path)
 })
 
-test_that("write_output_workbook handles NULL schedule (infeasible) gracefully", {
+test_that("write_output_workbook always writes three sheets, even on infeasible", {
   out_path <- tempfile(fileext = ".xlsx")
   diagnostics <- tibble::tibble(
     field = c("solver_status", "infeasibility_diagnosis"),
@@ -51,8 +51,33 @@ test_that("write_output_workbook handles NULL schedule (infeasible) gracefully",
                         diagnostics = diagnostics)
   expect_true(file.exists(out_path))
   sheets <- readxl::excel_sheets(out_path)
-  expect_true("diagnostics" %in% sheets)
+  expect_setequal(sheets, c("schedule", "summary", "diagnostics"))
   rt_diag <- readxl::read_excel(out_path, sheet = "diagnostics")
   expect_equal(nrow(rt_diag), 2L)
+  unlink(out_path)
+})
+
+test_that("write_output_workbook accepts holiday_dates and the file is valid", {
+  # We don't introspect cell formatting (openxlsx2 doesn't expose a clean
+  # round-trip read for fills), but we exercise the holiday code path and
+  # confirm the file reads back correctly.
+  schedule <- tibble::tibble(
+    date = as.Date(c("2026-05-01","2026-05-02","2026-05-04")),
+    weekday = c("V","S","L"),  # Friday holiday, Saturday, Monday
+    `1° reperibile` = c("Fovanna / Mereu", "Franzelli / Casella", "Carniti"),
+    `2° reperibile` = c("Notaroberto / Leka", "Diaco / Notaroberto", "Ingiardi")
+  )
+  summary_df <- tibble::tibble(
+    operator_id = "Fovanna", role = "senior",
+    n_first = 1L, n_second = 0L, n_weekend = 0L, n_holiday = 1L,
+    total = 1L, carry_in_window = 0L, delta_vs_mean = 0
+  )
+  diagnostics <- tibble::tibble(field = "solver_status", value = "optimal")
+  out_path <- tempfile(fileext = ".xlsx")
+  write_output_workbook(out_path, schedule, summary_df, diagnostics,
+                        holiday_dates = as.Date("2026-05-01"))
+  expect_true(file.exists(out_path))
+  rt <- readxl::read_excel(out_path, sheet = "schedule")
+  expect_equal(nrow(rt), 3L)
   unlink(out_path)
 })
