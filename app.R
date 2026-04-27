@@ -28,7 +28,10 @@ ui <- bslib::page_sidebar(
   shinyjs::useShinyjs(),
   sidebar = bslib::sidebar(
     mod_upload_ui("upload"),
-    mod_settings_ui("settings")
+    mod_settings_ui("settings"),
+    shiny::actionButton("restart", i18n_it$start_over,
+                        class = "btn btn-link",
+                        style = "margin-top: 1rem; padding: 0; text-align: left;")
   ),
   mod_passcode_ui("gate"),
   shiny::uiOutput("authed_app")
@@ -58,11 +61,17 @@ server <- function(input, output, session) {
 
   result <- shiny::eventReactive(settings$generate(), {
     shiny::req(upload$parsed())
-    ctx <- ctx_reactive()
-    m <- build_milp(ctx)
-    sol <- solve_milp(m,
-      time_limit_seconds = rules$solver$time_limit_seconds)
-    postprocess_solution(sol, ctx)
+    shiny::withProgress(message = i18n_it$generating, value = NULL, {
+      ctx <- ctx_reactive()
+      m <- build_milp(ctx)
+      sol <- solve_milp(m,
+        time_limit_seconds = rules$solver$time_limit_seconds)
+      postprocess_solution(sol, ctx)
+    })
+  })
+
+  shiny::observeEvent(input$restart, {
+    session$reload()
   })
 
   mod_schedule_view_server("view", result, ctx_reactive)
