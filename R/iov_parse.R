@@ -145,3 +145,80 @@ read_iov_assenze_specialisti <- function(path, target_month) {
   }
   dplyr::bind_rows(out_rows)
 }
+
+#' Decode the shared-strings table of an openxlsx2 workbook.
+#'
+#' openxlsx2 exposes wb$sharedStrings as a character vector of XML fragments
+#' like "<si><t>Bonomi</t></si>" or rich-text "<si><r>…</r></si>". We need
+#' the plain text per index (0-based in the SST, 1-based in the returned R
+#' vector).
+#'
+#' When the workbook stores strings inline (c_t == "inlineStr" in sheet_data$cc
+#' rather than in the SST), we fall back to collecting all <is><t>…</t></is>
+#' values across all worksheets so callers can always use %in% membership tests
+#' regardless of how openxlsx2 chose to encode the strings.
+.iov_shared_strings <- function(wb) {
+  .extract_t_text <- function(x) {
+    if (is.na(x) || x == "") return(NA_character_)
+    m <- regmatches(x, gregexpr("<t[^>]*>[^<]*</t>", x))[[1]]
+    if (length(m) == 0L) return("")
+    paste(vapply(m, function(t) {
+      sub("</t>$", "", sub("^<t[^>]*>", "", t))
+    }, character(1)), collapse = "")
+  }
+
+  # Primary source: shared-strings table (SST).
+  sst <- vapply(wb$sharedStrings, .extract_t_text, character(1), USE.NAMES = FALSE)
+
+  # Fallback: collect inlineStr values from all worksheets.
+  inline <- character(0)
+  for (ws in wb$worksheets) {
+    cc <- ws$sheet_data$cc
+    if (is.null(cc) || nrow(cc) == 0L) next
+    is_col <- cc$is
+    if (is.null(is_col)) next
+    inline_rows <- is_col[!is.na(cc$c_t) & cc$c_t == "inlineStr" &
+                            !is.na(is_col) & nchar(is_col) > 0L]
+    parsed <- vapply(inline_rows, .extract_t_text, character(1), USE.NAMES = FALSE)
+    inline <- c(inline, parsed)
+  }
+
+  unique(c(sst, inline))
+}
+
+#' Build a closure that resolves a cell-style index to its fill RGB string.
+#'
+#' openxlsx2 represents cellXfs and fills as XML strings inside
+#' wb$styles_mgr$styles. To get from a cell's c_s (style index) to its fill
+#' rgb, we walk: cellXfs[c_s+1] → parse fillId → fills[fillId+1] → parse
+#' fgColor rgb. We cache the chain into two integer/character vectors and
+#' return a fast closure.
+#'
+#' @return function(style_idx) -> RGB string ("FFFFFFFF") or NA_character_.
+.iov_style_to_fill_rgb_lookup <- function(wb) {
+  cell_xfs <- wb$styles_mgr$styles$cellXfs
+  fills    <- wb$styles_mgr$styles$fills
+
+  xf_fillid <- vapply(cell_xfs, function(xml) {
+    m <- regmatches(xml, regexpr('fillId="([0-9]+)"', xml))
+    if (length(m) == 0L) return(NA_integer_)
+    as.integer(sub('fillId="', "", sub('"$', "", m)))
+  }, integer(1))
+
+  fill_rgb <- unname(vapply(fills, function(xml) {
+    m <- regmatches(xml, regexpr('fgColor rgb="([A-F0-9]+)"', xml))
+    if (length(m) == 0L) return(NA_character_)
+    sub('"$', "", sub('fgColor rgb="', "", m))
+  }, character(1)))
+
+  function(style_idx) {
+    if (length(style_idx) == 0L || is.na(style_idx) || style_idx == "") {
+      return(NA_character_)
+    }
+    i <- as.integer(style_idx) + 1L  # cell c_s is 0-based
+    if (i < 1L || i > length(xf_fillid)) return(NA_character_)
+    fid <- xf_fillid[i]
+    if (is.na(fid)) return(NA_character_)
+    fill_rgb[fid + 1L]
+  }
+}
