@@ -2,6 +2,9 @@
 .Rhistory
 .RData
 .Ruserdata
+.DS_Store
+..Rcheck/
+.claude/
 renv/library/
 renv/local/
 renv/cellar/
