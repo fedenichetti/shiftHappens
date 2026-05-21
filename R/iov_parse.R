@@ -60,3 +60,88 @@ read_iov_prospetto <- function(path) {
   )
   out
 }
+
+#' Classify a single cell value from the assenze file.
+#'
+#' Returns a tibble row with `absence_type` and `slot`. Unknown markers are
+#' classified as `"other"` so the planner UI can surface them. Empty / NA
+#' cells return NULL (caller filters them out).
+.iov_classify_assenza <- function(v) {
+  if (is.na(v) || trimws(v) == "") return(NULL)
+  vt <- toupper(trimws(v))
+  base <- substr(vt, 1, 2)
+  slot <- "full_day"
+  if (grepl("POMERIGGIO", vt)) slot <- "pomeriggio"
+  if (grepl("MATTINO|MATTINA", vt)) slot <- "mattino"
+
+  type <- switch(base,
+    AF = "ferie",
+    AC = "congresso",
+    NO = if (grepl("GUARDIA", vt)) "no_guardia" else if (grepl("REP", vt)) "no_rep" else "other",
+    "other"
+  )
+  list(absence_type = type, slot = slot)
+}
+
+#' Parse the attendings' absence workbook.
+#'
+#' The file has a single sheet (Foglio1) with rows 1-2 = dow + day-number
+#' headers, row 3 = SPECIALISTI marker, rows 4-N = attending rows. We stop
+#' at the first row whose first cell matches "SPECIALIZZAND" (case-
+#' insensitive) — the resident section is parsed by a different module.
+#'
+#' @param path Absolute path to the assenze xlsx.
+#' @param target_month YYYY-MM string used to build absolute dates from the
+#'   day-of-month integers in row 2.
+#' @return tibble(date, dow, person, absence_type, slot). Empty cells are
+#'   dropped; one row per (person, date) absence.
+#' @export
+read_iov_assenze_specialisti <- function(path, target_month) {
+  if (!file.exists(path)) stop("Assenze file not found: ", path)
+  if (!grepl("^[0-9]{4}-(0[1-9]|1[0-2])$", target_month)) {
+    stop("target_month must be YYYY-MM, got: ", target_month)
+  }
+
+  raw <- readxl::read_excel(path, sheet = 1, col_names = FALSE,
+                            .name_repair = "minimal")
+
+  # Row 2 holds day-of-month integers in cols 2..N.
+  day_row  <- suppressWarnings(as.integer(unlist(raw[2, ])))
+  dow_row  <- as.character(unlist(raw[1, ]))
+  day_cols <- which(!is.na(day_row) & day_row >= 1L & day_row <= 31L)
+
+  # Find the SPECIALIZZANDI cutoff row.
+  col1 <- toupper(as.character(raw[[1]]))
+  cutoff <- which(grepl("SPECIALIZZAND", col1))
+  end_row <- if (length(cutoff)) min(cutoff) - 1L else nrow(raw)
+
+  # Attending data rows: 4..end_row (skip rows 1,2,3 which are headers/marker).
+  out_rows <- list()
+  for (r in seq.int(4L, end_row)) {
+    person <- trimws(as.character(raw[[1]][r]))
+    if (is.na(person) || person == "") next
+    for (c in day_cols) {
+      cls <- .iov_classify_assenza(as.character(raw[[c]][r]))
+      if (is.null(cls)) next
+      d <- as.Date(sprintf("%s-%02d", target_month, day_row[c]))
+      out_rows[[length(out_rows) + 1L]] <- tibble::tibble(
+        date         = d,
+        dow          = dow_row[c],
+        person       = person,
+        absence_type = cls$absence_type,
+        slot         = cls$slot
+      )
+    }
+  }
+
+  if (length(out_rows) == 0L) {
+    return(tibble::tibble(
+      date         = as.Date(character()),
+      dow          = character(),
+      person       = character(),
+      absence_type = character(),
+      slot         = character()
+    ))
+  }
+  dplyr::bind_rows(out_rows)
+}
