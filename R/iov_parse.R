@@ -417,3 +417,49 @@ read_iov_desiderata_specializzandi <- function(path, sheet, target_month) {
 
   long
 }
+
+#' Parse all three IOV input workbooks and return the unified parsed_inputs
+#' state described in spec §4.2.
+#'
+#' @param prospetto_path Path to the inter-unit weekend night rota xlsx.
+#' @param desiderata_path Path to the residents' desiderata workbook xlsx.
+#' @param desiderata_sheet Sheet name within the desiderata workbook
+#'   (typically the Italian month name, e.g. "Luglio 2026").
+#' @param assenze_path Path to the attendings' absences xlsx.
+#' @param target_month YYYY-MM string. All three inputs are cross-validated
+#'   against this.
+#' @return named list (target_month, prospetto, desiderata_long, assenze_long).
+#' @export
+read_iov_inputs <- function(prospetto_path, desiderata_path, desiderata_sheet,
+                            assenze_path, target_month) {
+  if (!grepl("^[0-9]{4}-(0[1-9]|1[0-2])$", target_month)) {
+    stop("target_month must be YYYY-MM, got: ", target_month)
+  }
+
+  prospetto       <- read_iov_prospetto(prospetto_path)
+  desiderata_long <- read_iov_desiderata_specializzandi(
+    desiderata_path, sheet = desiderata_sheet, target_month = target_month)
+  assenze_long    <- read_iov_assenze_specialisti(
+    assenze_path, target_month = target_month)
+
+  # Cross-validation: PROSPETTO must include at least one row in target month.
+  in_month <- format(prospetto$date, "%Y-%m") == target_month
+  if (!any(in_month)) {
+    stop("no PROSPETTO rows for target month ", target_month,
+         " — file may be for a different quarter")
+  }
+
+  # Desiderata dates must all lie inside target month (enforced by construction
+  # since the parser builds them from target_month). Verify defensively.
+  if (nrow(desiderata_long) > 0L &&
+      any(format(desiderata_long$date, "%Y-%m") != target_month)) {
+    stop("desiderata contains dates outside ", target_month)
+  }
+
+  list(
+    target_month    = target_month,
+    prospetto       = prospetto,
+    desiderata_long = desiderata_long,
+    assenze_long    = assenze_long
+  )
+}
