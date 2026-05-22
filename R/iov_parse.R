@@ -208,3 +208,78 @@ read_iov_assenze_specialisti <- function(path, target_month) {
     fill_rgb[fid + 1L]
   }
 }
+
+#' Locked year-color map (spec §4.3). Updates require a spec amendment.
+.iov_year_map <- c(
+  # Reds → ex-resident (not in rotation)
+  "FFFF0000" = "0", "FF980000" = "0", "FFE06666" = "0",
+  # Pinks → 5° anno (rosa)
+  "FFF4CCCC" = "5", "FFEAD1DC" = "5",
+  # Blues → 4° anno (azzurro)
+  "FF9FC5E8" = "4", "FFCFE2F3" = "4", "FFC9DAF8" = "4", "FFA4C2F4" = "4",
+  # Oranges → 3° anno (arancio)
+  "FFF6B26B" = "3", "FFF9CB9C" = "3", "FFFCE5CD" = "3",
+  # Greens → 2° anno (verde)
+  "FFD9EAD3" = "2", "FF93C47D" = "2", "FFB6D7A8" = "2",
+  # Purples → 1° anno (viola)
+  "FFB4A7D6" = "1", "FFD9D2E9" = "1"
+)
+
+.iov_year_for_rgb <- function(rgb) {
+  out <- unname(.iov_year_map[rgb])
+  ifelse(is.na(out), "unknown", out)
+}
+
+#' Convert Excel column letters ("A", "AA") to 1-based numeric indices.
+.iov_col_letter_to_num <- function(x) {
+  vapply(x, function(s) {
+    if (is.na(s) || s == "") return(NA_integer_)
+    chars <- strsplit(s, "")[[1]]
+    nums  <- match(chars, LETTERS)
+    Reduce(function(a, b) a * 26L + b, nums)
+  }, integer(1), USE.NAMES = FALSE)
+}
+
+#' Read a single cell's value, honoring shared-string indices.
+.iov_cell_value <- function(c_t, v, is_text, sst) {
+  if (!is.na(c_t) && c_t == "s") {
+    idx <- suppressWarnings(as.integer(v))
+    if (is.na(idx) || idx + 1L > length(sst)) return(NA_character_)
+    sst[idx + 1L]
+  } else if (!is.na(c_t) && c_t == "inlineStr") {
+    m <- regmatches(is_text, regexpr("<t[^>]*>([^<]*)</t>", is_text))
+    if (length(m) == 0L) NA_character_
+    else sub("</t>$", "", sub("^<t[^>]*>", "", m))
+  } else if (!is.na(v) && v != "") {
+    v
+  } else NA_character_
+}
+
+#' Read row 3 of a desiderata sheet and derive resident year from fill color.
+.iov_extract_residents <- function(wb, sheet) {
+  sh <- which(wb$get_sheet_names() == sheet)
+  if (length(sh) == 0L) stop("Sheet not found: ", sheet)
+  cc <- wb$worksheets[[sh]]$sheet_data$cc
+  sst <- .iov_shared_strings(wb)
+  fill_lookup <- .iov_style_to_fill_rgb_lookup(wb)
+
+  r3 <- cc[as.character(cc$row_r) == "3", , drop = FALSE]
+  if (nrow(r3) == 0L) {
+    return(tibble::tibble(col = integer(), resident = character(), year = character()))
+  }
+  r3$col_num <- .iov_col_letter_to_num(sub("[0-9]+$", "", r3$c_r))
+
+  values <- vapply(seq_len(nrow(r3)), function(i) {
+    .iov_cell_value(r3$c_t[i], r3$v[i], r3$is[i], sst)
+  }, character(1))
+  fills <- vapply(r3$c_s, fill_lookup, character(1))
+
+  out <- tibble::tibble(
+    col = r3$col_num, resident = values, fill_rgb = fills
+  )
+  out <- dplyr::filter(out, !is.na(.data$resident), .data$col >= 3L)
+  out <- dplyr::filter(out, !grepl("Assegnazione", .data$resident,
+                                   ignore.case = TRUE))
+  out$year <- .iov_year_for_rgb(out$fill_rgb)
+  dplyr::select(out, "col", "resident", "year")
+}
