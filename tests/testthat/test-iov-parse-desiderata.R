@@ -68,3 +68,38 @@ test_that(".iov_extract_residents drops 'Assegnazione …BOZZA' template cols", 
   expect_equal(nrow(res), 1L)
   expect_equal(res$resident, "Rossi")
 })
+
+test_that("read_iov_desiderata_specializzandi long-format covers all (resident × date × shift)", {
+  fixture <- tempfile(fileext = ".xlsx")
+  .iov_fx_desiderata(fixture)
+
+  out <- read_iov_desiderata_specializzandi(fixture,
+    sheet = "Luglio 2026", target_month = "2026-07")
+
+  expect_s3_class(out, "tbl_df")
+  expect_named(out, c("date", "dow", "shift", "resident", "year",
+                      "status", "preference", "raw_value"))
+
+  # 4 residents × 7 day-rows (3 weekdays + 2 weekend × 2 rows) = 28 rows.
+  expect_equal(nrow(out), 28L)
+  expect_equal(sort(unique(out$shift)), c("GIORNO", "NOTTE"))
+
+  # Spot-check: Bianchi on Wed Jul 1 row had "x" → unavailable_soft, NOTTE shift.
+  bw1 <- dplyr::filter(out, resident == "Bianchi", date == as.Date("2026-07-01"))
+  expect_equal(nrow(bw1), 1L)
+  expect_equal(bw1$shift, "NOTTE")
+  expect_equal(bw1$status, "unavailable_soft")
+  expect_equal(bw1$raw_value, "x")
+
+  # Spot-check: Sat Jul 4 row 7 (seq=1) = GIORNO, row 8 (seq=2) = NOTTE.
+  sat <- dplyr::filter(out, date == as.Date("2026-07-04"))
+  expect_equal(nrow(sat), 8L)  # 4 residents × 2 shifts
+  bianchi_sat <- dplyr::filter(sat, resident == "Bianchi")
+  expect_equal(bianchi_sat$status[bianchi_sat$shift == "GIORNO"], "unavailable_soft")
+  expect_equal(bianchi_sat$status[bianchi_sat$shift == "NOTTE"], "available")
+
+  # Yellow fill: Rossi Fri Jul 3 (col C row 6) + Bianchi Sun Jul 5 GIORNO (col D row 9).
+  fav <- dplyr::filter(out, preference == "favorite")
+  expect_equal(nrow(fav), 2L)
+  expect_true(all(c("Rossi", "Bianchi") %in% fav$resident))
+})

@@ -242,6 +242,7 @@ read_iov_assenze_specialisti <- function(path, target_month) {
 
 #' Read a single cell's value, honoring shared-string indices.
 .iov_cell_value <- function(c_t, v, is_text, sst) {
+  if (!is.na(c_t) && c_t == "e") return(NA_character_)  # error cells → blank
   if (!is.na(c_t) && c_t == "s") {
     idx <- suppressWarnings(as.integer(v))
     if (is.na(idx) || idx + 1L > length(sst)) return(NA_character_)
@@ -282,4 +283,137 @@ read_iov_assenze_specialisti <- function(path, target_month) {
                                    ignore.case = TRUE))
   out$year <- .iov_year_for_rgb(out$fill_rgb)
   dplyr::select(out, "col", "resident", "year")
+}
+
+#' Yellow-fill RGBs that mark a "favorite" (preferred) cell.
+.iov_yellow_rgbs <- c("FFFFFF00", "FFFFF2CC", "FFFFE599", "FFFFD966")
+
+.iov_parse_status <- function(raw) {
+  if (is.na(raw) || trimws(raw) == "") return("available")
+  vt <- toupper(trimws(raw))
+  if (vt == "X") return("unavailable_soft")
+  if (startsWith(vt, "AF")) return("ferie")
+  if (startsWith(vt, "AC")) return("congresso")
+  "other"
+}
+
+#' Parse the residents' desiderata workbook for a given target month.
+#'
+#' Reads a single sheet (e.g. "Luglio 2026") and returns one row per
+#' (resident × date × shift). Weekend rows in the source are duplicated:
+#' first = GIORNO (08-20), second = NOTTE (20-08). Weekday rows are single
+#' and correspond to NOTTE only (residents do not work daytime feriale).
+#'
+#' @param path xlsx path.
+#' @param sheet Sheet name to parse (e.g. "Luglio 2026").
+#' @param target_month YYYY-MM string; the day numbers in column B are
+#'   combined with this to build absolute dates.
+#' @return tibble(date, dow, shift, resident, year, status, preference, raw_value).
+#' @export
+read_iov_desiderata_specializzandi <- function(path, sheet, target_month) {
+  if (!file.exists(path)) stop("Desiderata file not found: ", path)
+  if (!grepl("^[0-9]{4}-(0[1-9]|1[0-2])$", target_month)) {
+    stop("target_month must be YYYY-MM, got: ", target_month)
+  }
+
+  wb <- openxlsx2::wb_load(path)
+  residents <- .iov_extract_residents(wb, sheet)
+  if (nrow(residents) == 0L) {
+    stop("No residents detected in row 3 of sheet: ", sheet)
+  }
+
+  sh  <- which(wb$get_sheet_names() == sheet)
+  cc  <- wb$worksheets[[sh]]$sheet_data$cc
+  sst <- .iov_shared_strings(wb)
+  fill_lookup <- .iov_style_to_fill_rgb_lookup(wb)
+
+  cc$row_int  <- as.integer(cc$row_r)
+  cc$col_num  <- .iov_col_letter_to_num(sub("[0-9]+$", "", cc$c_r))
+
+  # Day index: rows 4..N with col B = day-of-month integer.
+  day_cells <- cc[cc$col_num == 2L & cc$row_int >= 4L, , drop = FALSE]
+  dow_cells <- cc[cc$col_num == 1L & cc$row_int >= 4L, , drop = FALSE]
+
+  day_idx <- tibble::tibble(
+    row = day_cells$row_int,
+    day = suppressWarnings(as.integer(vapply(seq_len(nrow(day_cells)),
+      function(i) .iov_cell_value(day_cells$c_t[i], day_cells$v[i],
+                                  day_cells$is[i], sst), character(1)))),
+    dow = vapply(seq_len(nrow(dow_cells)),
+      function(i) .iov_cell_value(dow_cells$c_t[i], dow_cells$v[i],
+                                  dow_cells$is[i], sst), character(1))[
+        match(day_cells$row_int, dow_cells$row_int)]
+  )
+  day_idx <- dplyr::filter(day_idx, !is.na(.data$day))
+  day_idx$date <- as.Date(sprintf("%s-%02d", target_month, day_idx$day))
+
+  # Assign shift labels based on weekend-row duplication convention.
+  day_idx <- dplyr::arrange(day_idx, .data$row)
+  day_idx <- day_idx |>
+    dplyr::group_by(.data$date) |>
+    dplyr::mutate(
+      is_weekend = .data$dow %in% c("Sab", "Dom"),
+      seq        = dplyr::row_number(),
+      shift      = dplyr::case_when(
+        .data$is_weekend & .data$seq == 1 ~ "GIORNO",
+        .data$is_weekend & .data$seq == 2 ~ "NOTTE",
+        TRUE                              ~ "NOTTE"
+      )
+    ) |>
+    dplyr::ungroup() |>
+    dplyr::select("row", "dow", "date", "shift")
+
+  # Data cells: rows >= 4, cols matching residents.
+  data_rows <- list()
+  for (i in seq_len(nrow(residents))) {
+    col_i <- residents$col[i]
+    cells_i <- cc[cc$col_num == col_i & cc$row_int >= 4L, , drop = FALSE]
+    if (nrow(cells_i) == 0L) {
+      # Resident with all-blank column: emit a row per day with status=available.
+      data_rows[[length(data_rows) + 1L]] <- tibble::tibble(
+        row       = day_idx$row,
+        raw_value = NA_character_,
+        fill_rgb  = NA_character_,
+        resident  = residents$resident[i],
+        year      = residents$year[i]
+      )
+      next
+    }
+    vals <- vapply(seq_len(nrow(cells_i)),
+      function(j) .iov_cell_value(cells_i$c_t[j], cells_i$v[j],
+                                  cells_i$is[j], sst), character(1))
+    fills <- vapply(cells_i$c_s, fill_lookup, character(1))
+    df <- tibble::tibble(
+      row = cells_i$row_int,
+      raw_value = vals,
+      fill_rgb  = fills,
+      resident  = residents$resident[i],
+      year      = residents$year[i]
+    )
+    # Add the empty-cell rows (days where the resident has no cell) as available.
+    missing_rows <- setdiff(day_idx$row, df$row)
+    if (length(missing_rows) > 0L) {
+      df <- dplyr::bind_rows(df, tibble::tibble(
+        row = missing_rows,
+        raw_value = NA_character_,
+        fill_rgb  = NA_character_,
+        resident  = residents$resident[i],
+        year      = residents$year[i]
+      ))
+    }
+    data_rows[[length(data_rows) + 1L]] <- df
+  }
+
+  long <- dplyr::bind_rows(data_rows) |>
+    dplyr::left_join(day_idx, by = "row") |>
+    dplyr::mutate(
+      status     = vapply(.data$raw_value, .iov_parse_status, character(1),
+                          USE.NAMES = FALSE),
+      preference = ifelse(.data$fill_rgb %in% .iov_yellow_rgbs,
+                          "favorite", "neutral")
+    ) |>
+    dplyr::select("date", "dow", "shift", "resident", "year",
+                  "status", "preference", "raw_value")
+
+  long
 }
