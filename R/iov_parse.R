@@ -153,10 +153,11 @@ read_iov_assenze_specialisti <- function(path, target_month) {
 #' the plain text per index (0-based in the SST, 1-based in the returned R
 #' vector).
 #'
-#' When the workbook stores strings inline (c_t == "inlineStr" in sheet_data$cc
-#' rather than in the SST), we fall back to collecting all <is><t>…</t></is>
-#' values across all worksheets so callers can always use %in% membership tests
-#' regardless of how openxlsx2 chose to encode the strings.
+#' The returned vector is positionally identical to wb$sharedStrings: entry
+#' [i] corresponds to SST index (i - 1L). Duplicates are preserved. Callers
+#' that look up cell values by SST index must use direct indexing:
+#'   sst[as.integer(v) + 1L]
+#' Do NOT deduplicate or filter this vector.
 .iov_shared_strings <- function(wb) {
   .extract_t_text <- function(x) {
     if (is.na(x) || x == "") return(NA_character_)
@@ -167,23 +168,8 @@ read_iov_assenze_specialisti <- function(path, target_month) {
     }, character(1)), collapse = "")
   }
 
-  # Primary source: shared-strings table (SST).
-  sst <- vapply(wb$sharedStrings, .extract_t_text, character(1), USE.NAMES = FALSE)
-
-  # Fallback: collect inlineStr values from all worksheets.
-  inline <- character(0)
-  for (ws in wb$worksheets) {
-    cc <- ws$sheet_data$cc
-    if (is.null(cc) || nrow(cc) == 0L) next
-    is_col <- cc$is
-    if (is.null(is_col)) next
-    inline_rows <- is_col[!is.na(cc$c_t) & cc$c_t == "inlineStr" &
-                            !is.na(is_col) & nchar(is_col) > 0L]
-    parsed <- vapply(inline_rows, .extract_t_text, character(1), USE.NAMES = FALSE)
-    inline <- c(inline, parsed)
-  }
-
-  unique(c(sst, inline))
+  # Decode every SST entry in order. Length matches wb$sharedStrings exactly.
+  vapply(wb$sharedStrings, .extract_t_text, character(1), USE.NAMES = FALSE)
 }
 
 #' Build a closure that resolves a cell-style index to its fill RGB string.
