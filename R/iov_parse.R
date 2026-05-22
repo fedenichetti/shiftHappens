@@ -405,7 +405,7 @@ read_iov_desiderata_specializzandi <- function(path, sheet, target_month) {
   }
 
   long <- dplyr::bind_rows(data_rows) |>
-    dplyr::left_join(day_idx, by = "row") |>
+    dplyr::inner_join(day_idx, by = "row") |>
     dplyr::mutate(
       status     = vapply(.data$raw_value, .iov_parse_status, character(1),
                           USE.NAMES = FALSE),

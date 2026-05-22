@@ -156,6 +156,7 @@ day_idx <- cells |>
 # Weekend days (Sab/Dom) appear twice. Convention: 1st row = GIORNO, 2nd = NOTTE.
 # Weekday rows = single, NOTTE only (per IOV_RULES.md).
 day_idx <- day_idx |>
+  filter(!is.na(day)) |>
   arrange(row) |>
   group_by(date) |>
   mutate(

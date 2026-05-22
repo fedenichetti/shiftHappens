@@ -18,33 +18,32 @@ test_that("read_iov_desiderata_specializzandi matches the golden derived file", 
   golden <- readxl::read_excel(.iov_golden_out_desiderata,
                                sheet = "desiderata_long")
 
-  # Filter out orphaned rows (with NA dates) from both for comparison.
-  # These arise from data-quality issues in the source xlsx (spurious continuation
-  # cells beyond the day index). Both the parser and golden file generate these.
-  parsed_clean <- dplyr::filter(parsed, !is.na(.data$date))
+  # The golden file has a fill_rgb column the parser does not emit; drop it for
+  # comparison. Both sides must be NA-free (the parser inner_join guarantees this).
   golden_clean <- golden |>
     dplyr::mutate(date = as.Date(.data$date)) |>
-    dplyr::filter(!is.na(.data$date)) |>
     dplyr::select(-fill_rgb)
 
-  # Row counts should match on the cleaned data (within tolerance for
-  # minor data-quality variations). Expect approximately equal.
-  parsed_count <- nrow(parsed_clean)
+  # Row counts must match closely. A tolerance of 2 is allowed: the golden
+  # script does not synthesise "available" rows for residents whose column is
+  # entirely blank on a given day, whereas the parser always emits one row per
+  # (resident × date × shift). Any discrepancy beyond 2 rows indicates a
+  # structural regression.
+  parsed_count <- nrow(parsed)
   golden_count <- nrow(golden_clean)
-  tolerance <- 5L  # Allow up to 5-row difference
-  expect_true(abs(parsed_count - golden_count) <= tolerance,
-    info = sprintf("Row counts differ: parsed=%d, golden=%d (tolerance=%d)",
-                   parsed_count, golden_count, tolerance))
+  expect_true(abs(parsed_count - golden_count) <= 2L,
+    info = sprintf("Row counts differ beyond tolerance: parsed=%d, golden=%d (diff=%d, max=2)",
+                   parsed_count, golden_count, abs(parsed_count - golden_count)))
 
   # 21 active residents from July roster should all be present;
   # spot-check 4 of them.
   for (name in c("Bof", "Bivona", "Massa", "Pittarello")) {
-    expect_true(name %in% parsed_clean$resident,
+    expect_true(name %in% parsed$resident,
                 info = paste("missing resident:", name))
   }
 
   # Year tags for the 4 spot-checks: Bof=4, Bivona=1, Massa=1, Pittarello=5.
-  uniq <- dplyr::distinct(parsed_clean, resident, year)
+  uniq <- dplyr::distinct(parsed, resident, year)
   expect_equal(uniq$year[uniq$resident == "Bof"], "4")
   expect_equal(uniq$year[uniq$resident == "Bivona"], "1")
   expect_equal(uniq$year[uniq$resident == "Massa"], "1")
@@ -52,7 +51,7 @@ test_that("read_iov_desiderata_specializzandi matches the golden derived file", 
 
   # 3 weekend ONCO 1 attending-night dates: Sat Jul 4, Sun Jul 12, Sat Jul 25
   # must produce NOTTE rows. Just check date set.
-  notte_dates <- sort(unique(dplyr::filter(parsed_clean, shift == "NOTTE")$date))
+  notte_dates <- sort(unique(dplyr::filter(parsed, shift == "NOTTE")$date))
   expect_true(as.Date("2026-07-04") %in% notte_dates)
   expect_true(as.Date("2026-07-12") %in% notte_dates)
   expect_true(as.Date("2026-07-25") %in% notte_dates)
