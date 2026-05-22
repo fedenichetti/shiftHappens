@@ -51,8 +51,10 @@ build_calendar <- function(year, month, holidays_extra = NULL) {
 
 #' Slot template for a slot_kind. Internal helper.
 #'
-#' weekday slots: one 12h night per role (1° + 2°) = 2 slots
+#' weekday slots: one 12h night per role (1 + 2) = 2 slots
 #' weekend/holiday slots: day + night per role = 4 slots
+#' @param kind one of "weekday", "weekend", "holiday".
+#' @noRd
 slots_for_kind <- function(kind) {
   switch(kind,
     weekday = tibble::tibble(

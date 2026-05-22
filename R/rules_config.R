@@ -1,5 +1,6 @@
 #' Default values merged into any user-supplied rules YAML.
-#' Internal — exposed only as a constant.
+#' Internal -- exposed only as a constant.
+#' @noRd
 .rules_defaults <- list(
   unit = list(locale = "it"),
   limits = list(
@@ -28,12 +29,14 @@
 )
 
 #' Required top-level keys and required sub-keys per section.
+#' @noRd
 .rules_required <- list(
   unit  = c("name"),
   roles = c("primary", "secondary")
 )
 
 #' Numeric keys whose values must be integer >= 0.
+#' @noRd
 .rules_numeric <- list(
   limits = c("senior_max_per_month", "min_free_weekends_per_month",
              "weekday_min_rest_days", "post_weekend_min_rest_days",
@@ -45,6 +48,9 @@
 
 #' Recursively merge two lists; right side wins.
 #' Internal helper.
+#' @param default base list.
+#' @param override override list; right-side values win.
+#' @noRd
 .merge_lists <- function(default, override) {
   if (!is.list(default) || !is.list(override)) return(override %||% default)
   for (k in names(override)) {

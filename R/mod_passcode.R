@@ -4,6 +4,8 @@
 #' bypassed (development mode).
 #'
 #' Returns a reactive logical: TRUE once the user is authenticated.
+#' @param id Shiny module namespace id.
+#' @noRd
 mod_passcode_ui <- function(id) {
   ns <- shiny::NS(id)
   shiny::uiOutput(ns("gate"))

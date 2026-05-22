@@ -76,8 +76,8 @@ build_model_context <- function(wb, rules, cal) {
 
 #' Build the MILP for an on-call month using the prepared context.
 #'
-#' Decision variable: x[op, day, slot, role_pos] in {0,1} where slot is
-#' the index within calendar$slots[[day]] and role_pos in {1,2} for
+#' Decision variable: x[op, day, slot, role_pos] in \{0,1\} where slot is
+#' the index within calendar$slots[[day]] and role_pos in \{1,2\} for
 #' (first, second).
 #'
 #' This task adds H1 (coverage) only. Subsequent tasks layer on H2-H10.

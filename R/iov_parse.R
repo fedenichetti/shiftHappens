@@ -42,15 +42,17 @@ read_iov_prospetto <- function(path) {
   data_mask <- !is.na(col2_num) & col2_num > 0
 
   if (!any(data_mask)) {
-    stop("PROSPETTO contains no data rows — sheet structure unexpected")
+    stop("PROSPETTO contains no data rows -- sheet structure unexpected")
   }
 
+  # Day-name lookup: both unaccented (older xlsx) and accented (I-grave Ì)
+  # forms appear in IOV workbooks.  Using \u escapes keeps the file ASCII-safe.
   dow_map <- c(SABATO = "Sab", DOMENICA = "Dom",
-               LUNEDI = "Lun", "LUNEDÌ" = "Lun",
-               MARTEDI = "Mar", "MARTEDÌ" = "Mar",
-               MERCOLEDI = "Mer", "MERCOLEDÌ" = "Mer",
-               GIOVEDI = "Gio", "GIOVEDÌ" = "Gio",
-               VENERDI = "Ven", "VENERDÌ" = "Ven")
+               LUNEDI = "Lun", "LUNED\u00cc" = "Lun",
+               MARTEDI = "Mar", "MARTED\u00cc" = "Mar",
+               MERCOLEDI = "Mer", "MERCOLED\u00cc" = "Mer",
+               GIOVEDI = "Gio", "GIOVED\u00cc" = "Gio",
+               VENERDI = "Ven", "VENERD\u00cc" = "Ven")
 
   out <- tibble::tibble(
     date       = as.Date(col2_num[data_mask], origin = "1899-12-30"),
@@ -66,6 +68,8 @@ read_iov_prospetto <- function(path) {
 #' Returns a tibble row with `absence_type` and `slot`. Unknown markers are
 #' classified as `"other"` so the planner UI can surface them. Empty / NA
 #' cells return NULL (caller filters them out).
+#' @param v raw cell value string.
+#' @noRd
 .iov_classify_assenza <- function(v) {
   if (is.na(v) || trimws(v) == "") return(NULL)
   vt <- toupper(trimws(v))
@@ -149,7 +153,7 @@ read_iov_assenze_specialisti <- function(path, target_month) {
 #' Decode the shared-strings table of an openxlsx2 workbook.
 #'
 #' openxlsx2 exposes wb$sharedStrings as a character vector of XML fragments
-#' like "<si><t>Bonomi</t></si>" or rich-text "<si><r>…</r></si>". We need
+#' like "<si><t>Bonomi</t></si>" or rich-text "<si><r>...</r></si>". We need
 #' the plain text per index (0-based in the SST, 1-based in the returned R
 #' vector).
 #'
@@ -158,6 +162,8 @@ read_iov_assenze_specialisti <- function(path, target_month) {
 #' that look up cell values by SST index must use direct indexing:
 #'   sst[as.integer(v) + 1L]
 #' Do NOT deduplicate or filter this vector.
+#' @param wb openxlsx2 workbook object.
+#' @noRd
 .iov_shared_strings <- function(wb) {
   .extract_t_text <- function(x) {
     if (is.na(x) || x == "") return(NA_character_)
@@ -176,11 +182,13 @@ read_iov_assenze_specialisti <- function(path, target_month) {
 #'
 #' openxlsx2 represents cellXfs and fills as XML strings inside
 #' wb$styles_mgr$styles. To get from a cell's c_s (style index) to its fill
-#' rgb, we walk: cellXfs[c_s+1] → parse fillId → fills[fillId+1] → parse
+#' rgb, we walk: cellXfs[c_s+1] -> parse fillId -> fills[fillId+1] -> parse
 #' fgColor rgb. We cache the chain into two integer/character vectors and
 #' return a fast closure.
 #'
+#' @param wb openxlsx2 workbook object.
 #' @return function(style_idx) -> RGB string ("FFFFFFFF") or NA_character_.
+#' @noRd
 .iov_style_to_fill_rgb_lookup <- function(wb) {
   cell_xfs <- wb$styles_mgr$styles$cellXfs
   fills    <- wb$styles_mgr$styles$fills
@@ -209,7 +217,8 @@ read_iov_assenze_specialisti <- function(path, target_month) {
   }
 }
 
-#' Locked year-color map (spec §4.3). Updates require a spec amendment.
+#' Locked year-color map (spec 4.3). Updates require a spec amendment.
+#' @noRd
 .iov_year_map <- c(
   # Reds → ex-resident (not in rotation)
   "FFFF0000" = "0", "FF980000" = "0", "FFE06666" = "0",
@@ -231,6 +240,8 @@ read_iov_assenze_specialisti <- function(path, target_month) {
 }
 
 #' Convert Excel column letters ("A", "AA") to 1-based numeric indices.
+#' @param x character vector of column letter strings.
+#' @noRd
 .iov_col_letter_to_num <- function(x) {
   vapply(x, function(s) {
     if (is.na(s) || s == "") return(NA_integer_)
@@ -241,8 +252,13 @@ read_iov_assenze_specialisti <- function(path, target_month) {
 }
 
 #' Read a single cell's value, honoring shared-string indices.
+#' @param c_t cell type attribute from the xlsx cc data frame.
+#' @param v raw value attribute.
+#' @param is_text inlineStr XML fragment attribute.
+#' @param sst shared-strings table returned by .iov_shared_strings.
+#' @noRd
 .iov_cell_value <- function(c_t, v, is_text, sst) {
-  if (!is.na(c_t) && c_t == "e") return(NA_character_)  # error cells → blank
+  if (!is.na(c_t) && c_t == "e") return(NA_character_)  # error cells => blank
   if (!is.na(c_t) && c_t == "s") {
     idx <- suppressWarnings(as.integer(v))
     if (is.na(idx) || idx + 1L > length(sst)) return(NA_character_)
@@ -257,6 +273,9 @@ read_iov_assenze_specialisti <- function(path, target_month) {
 }
 
 #' Read row 3 of a desiderata sheet and derive resident year from fill color.
+#' @param wb openxlsx2 workbook object.
+#' @param sheet sheet name string.
+#' @noRd
 .iov_extract_residents <- function(wb, sheet) {
   sh <- which(wb$get_sheet_names() == sheet)
   if (length(sh) == 0L) stop("Sheet not found: ", sheet)
@@ -286,6 +305,7 @@ read_iov_assenze_specialisti <- function(path, target_month) {
 }
 
 #' Yellow-fill RGBs that mark a "favorite" (preferred) cell.
+#' @noRd
 .iov_yellow_rgbs <- c("FFFFFF00", "FFFFF2CC", "FFFFE599", "FFFFD966")
 
 .iov_parse_status <- function(raw) {
@@ -446,7 +466,7 @@ read_iov_inputs <- function(prospetto_path, desiderata_path, desiderata_sheet,
   in_month <- format(prospetto$date, "%Y-%m") == target_month
   if (!any(in_month)) {
     stop("no PROSPETTO rows for target month ", target_month,
-         " — file may be for a different quarter")
+         " -- file may be for a different quarter")
   }
 
   # Desiderata dates must all lie inside target month (enforced by construction

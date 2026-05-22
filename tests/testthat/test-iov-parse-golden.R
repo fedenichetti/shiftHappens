@@ -1,7 +1,11 @@
 test_that("read_iov_desiderata_specializzandi matches the golden derived file", {
-  # Use rprojroot to find project root, then construct paths.
-  # testthat may change the working directory, so we need absolute paths.
-  root <- rprojroot::find_root(rprojroot::is_r_package)
+  # Locate the project root safely: rprojroot::find_root() fails when run from
+  # R CMD check's temp directory (no DESCRIPTION ancestor). Fall back to skip.
+  root <- tryCatch(
+    rprojroot::find_root(rprojroot::is_r_package),
+    error = function(e) NULL
+  )
+  testthat::skip_if(is.null(root), "Cannot locate project root — skipping golden test (R CMD check context)")
   .iov_golden_src_desiderata <- file.path(root, "iov/Turni coguardia + guardia 2026 specializzandi.xlsx")
   .iov_golden_out_desiderata <- file.path(root, "iov/analysis/desiderata_07_2026.xlsx")
 
@@ -58,7 +62,11 @@ test_that("read_iov_desiderata_specializzandi matches the golden derived file", 
 })
 
 test_that("read_iov_prospetto on the real file picks out the 3 ONCO 1 weekend nights for July", {
-  root <- rprojroot::find_root(rprojroot::is_r_package)
+  root <- tryCatch(
+    rprojroot::find_root(rprojroot::is_r_package),
+    error = function(e) NULL
+  )
+  testthat::skip_if(is.null(root), "Cannot locate project root — skipping golden test (R CMD check context)")
   .iov_golden_src_prospetto  <- file.path(root, "iov/PROSPETTO GUARDIE 2026_LUGLIO_SETTEMBRE_DEF_.xlsx")
 
   testthat::skip_if_not(file.exists(.iov_golden_src_prospetto),
