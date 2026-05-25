@@ -33,19 +33,25 @@ test_that("validate_iov_inputs on real July 2026 inputs surfaces known data gaps
 
   result <- validate_iov_inputs(parsed, roster)
 
-  # Real IOV_MEMBERS is STALE: missing Jul + missing 4 ex-ONCO2 residents.
-  # Expected blockers (known data gaps to fix later by updating IOV_MEMBERS):
-  #   - REPARTO validity: BIVONA / BRAVI / BLOISE not in IOV_MEMBERS
-  #   - Possibly unknown_residents: people in assenze not in IOV_MEMBERS
-  # Therefore blockers > 0 is EXPECTED until IOV_MEMBERS gets updated.
+  # IOV_MEMBERS was updated on 2026-05-25 to include "Jul" for the 17 ongoing
+  # ONCO 1 residents and to add the 4 ex-ONCO 2 residents (MASSA / BIVONA /
+  # BLOISE / BRAVI). After that update we expect:
+  #   - REPARTO validity blockers = 0 (all 4 names now resolve in IOV_MEMBERS)
+  #   - active_months_mismatch warnings drastically reduced (the 17 ongoing
+  #     residents now have Jul in their active_months_2026)
+  # Residual blockers/warnings reflect REAL data quality issues (e.g. assenze
+  # names not in IOV_MEMBERS at all, weekend off-cap violations).
   expect_type(result$blockers, "character")
   expect_type(result$warnings, "character")
 
-  # The REPARTO validity blocker should mention BIVONA/BRAVI/BLOISE explicitly
+  # All 4 REPARTO names now resolve → no REPARTO validity blockers.
   reparto_msgs <- result$blockers[grepl("REPARTO", result$blockers)]
-  expect_gte(length(reparto_msgs), 1L)
+  expect_equal(length(reparto_msgs), 0L,
+    info = paste("Expected 0 REPARTO blockers after IOV_MEMBERS Jul-update;",
+                 "got:", paste(reparto_msgs, collapse = " | ")))
 
-  # Warnings should include the active_months_mismatch (the whole point of
-  # adding that check -- most residents don't have "Jul" in IOV_MEMBERS).
-  expect_true(any(grepl("active_months_2026", result$warnings)))
+  # Weekend off-cap warnings are expected on real data (>2 weekends marked
+  # as ferie/X for at least some active residents).
+  weekend_cap <- result$warnings[grepl("weekend", result$warnings)]
+  expect_gte(length(weekend_cap), 1L)
 })
