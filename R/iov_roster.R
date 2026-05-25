@@ -41,3 +41,16 @@ read_iov_members <- function(path) {
     active_months_2026  = trimws(as.character(raw$active_months_2026))
   )
 }
+
+#' Normalise a surname for cross-source matching.
+#'
+#' Uppercase, strip trailing apostrophes (SOLDA' → SOLDA), trim whitespace,
+#' collapse multiple internal spaces.
+.iov_normalize_name <- function(x) {
+  if (length(x) == 0L) return(character(0))
+  out <- toupper(trimws(as.character(x)))
+  out <- sub("'+$", "", out)
+  out <- gsub("\\s+", " ", out)
+  out[is.na(x) | nchar(out) == 0L] <- NA_character_
+  out
+}

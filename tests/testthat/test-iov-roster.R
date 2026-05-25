@@ -28,3 +28,14 @@ test_that("read_iov_members errors on missing file", {
   expect_error(read_iov_members("/no/such/file.xlsx"),
                "IOV_MEMBERS file not found")
 })
+
+test_that(".iov_normalize_name handles apostrophe drift and casing", {
+  expect_equal(.iov_normalize_name("Solda'"),  "SOLDA")
+  expect_equal(.iov_normalize_name("SOLDA"),    "SOLDA")
+  expect_equal(.iov_normalize_name("Trovò"),   "TROVÒ")
+  expect_equal(.iov_normalize_name("Trovò'"),  "TROVÒ")
+  expect_equal(.iov_normalize_name("Di Marco"), "DI MARCO")
+  expect_equal(.iov_normalize_name("  Bosio "), "BOSIO")
+  expect_equal(.iov_normalize_name("Di  Marco"), "DI MARCO")  # double space
+  expect_true(is.na(.iov_normalize_name(NA_character_)))
+})
