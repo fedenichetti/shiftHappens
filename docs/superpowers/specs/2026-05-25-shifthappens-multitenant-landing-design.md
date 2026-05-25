@@ -59,6 +59,9 @@ Replace the current ShiftHappens v1 UI (single-unit-per-deployment, multi-tab wo
 | 8 | i18n approach | **Lightweight in-house** via `R/i18n.R` (named lists `STRINGS$it`, `STRINGS$en`) + `tr(key)` helper + reactive `current_lang`. No `shiny.i18n` or `i18nlister` package. | YAGNI for two languages. Test enforces parity (every IT key has EN). Centre names are NOT translated (proper nouns). |
 | 9 | IOV release gate | **Wait for P-IOV-3+ before shipping the landing.** Both centres must work end-to-end at launch. | User decision: avoid shipping with one centre in "Coming soon" state. |
 | 10 | Module split | **One file per concern** under `R/mod_*` + supporting `R/i18n.R`, `R/centres_config.R`, `R/shifthappens_theme.R`. Old v1 `R/mod_*` files removed. | Keeps each module small and testable. Matches v1 conventions. |
+| 11 | Centre logo | **Small unit logo next to centre name** in the accordion header. Path configured per centre via YAML (`logo_path`); rendered ~28px tall via `tags$img`. Optional field — centres without a logo show name only. | Improves recognisability for hospital users; trivial cost; bslib handles via `accordion_panel(title = tagList(img, span))`. |
+| 12 | Download filename | **Per-centre template in YAML** (`download_filename`), with `{centre_id}` and `{target_month}` placeholders. Default: `turni_{centre_id}_{target_month}.xlsx`. | Lets each centre encode its own naming convention (IOV may want `turni_IOV_ONCO1_07.2026.xlsx` matching the existing manual workflow). |
+| 13 | Last generated indicator | **"Last generated: <date>"** badge below the centre header. Persisted to a JSON log file (`logs/<centre-id>.jsonl`) on each successful generation; read at app startup. | Caposala UX: avoids "did I already do July?" confusion. Breaks pure stateless principle minimally (one append-only log per centre); on Connect Cloud the log survives within a deploy lifecycle but resets on redeploy — documented limitation. |
 
 ---
 
@@ -78,6 +81,7 @@ R/
 ├── mod_centres_accordion.R        # iterate centres, render one panel each
 ├── mod_centre_card.R              # one centre: passcode + actions + output
 ├── mod_centre_output.R            # value_boxes + DT calendar + download
+├── iov_logs.R                     # append + read logs/<centre-id>.jsonl
 │
 ├── (parsers — already exist / P-IOV-1)
 ├── iov_parse.R                    # IOV inputs → parsed_inputs (DONE)
@@ -152,6 +156,8 @@ centres:
     parser: iov                       # routes to R/iov_parse.R + IOV backend
     rules_path: config/rules-iov-oncologia-1.yaml
     passcode_env: PASSCODE_IOV_ONCO1  # env var name
+    logo_path: www/logos/iov.svg      # optional; ~28px tall in accordion header
+    download_filename: "turni_IOV_ONCO1_{target_month}.xlsx"   # {YYYY-MM}
 
   - id: crema-sala-operatoria
     name: "Crema - Sala operatoria"
@@ -160,6 +166,8 @@ centres:
     parser: generic                   # routes to R/io_read.R + v1 backend
     rules_path: config/rules-crema-sala-operatoria.yaml
     passcode_env: PASSCODE_CREMA
+    logo_path: www/logos/crema.svg    # optional
+    download_filename: "turni_{centre_id}_{target_month}.xlsx"  # default pattern
 ```
 
 Validation rules (enforced by `load_centres_config()`):
@@ -168,6 +176,8 @@ Validation rules (enforced by `load_centres_config()`):
 - `rules_path` exists on disk.
 - `passcode_env` defined in environment at startup, OR `APP_DEV_MODE=true` (skip passcode for local dev).
 - `subtitle_it` and `subtitle_en` both present.
+- `logo_path` if present, file must exist; preferred format SVG (scales clean for dark/light), PNG allowed.
+- `download_filename` if present, must end in `.xlsx` and contain at most these placeholders: `{centre_id}`, `{target_month}`. Default applied if absent: `turni_{centre_id}_{target_month}.xlsx`.
 
 ### 4.2 Per-centre reactive state (in `mod_centre_card` server)
 
@@ -180,11 +190,18 @@ centre_state <- reactiveValues(
   result          = NULL,            # solver output tibble
   result_status   = NULL,            # "success" | "infeasible" | "error"
   result_message  = NULL,
-  generate_at     = NULL             # timestamp, for logging
+  generate_at     = NULL             # current-session timestamp
 )
 ```
 
-No database. The downloaded xlsx is the only durable artefact.
+**Persistence**: the downloaded xlsx is the primary durable artefact (no database). One small exception: the **last-generated indicator** (decision #13) appends a record per successful generation to `logs/<centre-id>.jsonl`:
+
+```jsonl
+{"target_month":"2026-07","generate_at":"2026-07-29T14:23:11Z","duration_seconds":23,"status":"success"}
+{"target_month":"2026-08","generate_at":"2026-07-30T09:01:44Z","duration_seconds":18,"status":"success"}
+```
+
+Read at app startup (and after each successful generate) to render the badge. On Connect Cloud the log survives within a deploy lifecycle but resets on redeploy — acceptable for v2.
 
 ### 4.3 i18n string lists
 
@@ -248,11 +265,13 @@ A test (`test-i18n.R`) enforces that `names(STRINGS$it) == names(STRINGS$en)`.
 │                                         │
 ├─────────────────────────────────────────┤  (smooth scroll target)
 │                                         │
-│  ▶ IOV - Oncologia 1                    │  ← accordion panel collapsed
-│    Padova · MILP IOV-specific           │
+│  ▶ [logo] IOV - Oncologia 1             │  ← accordion panel collapsed
+│           Padova · MILP IOV-specific    │
+│           Ultimo turno: 29 lug 2026     │  ← last-generated badge
 │                                         │
-│  ▶ Crema - Sala operatoria              │  ← accordion panel collapsed
-│    Reparto Chirurgia · MILP generico    │
+│  ▶ [logo] Crema - Sala operatoria       │  ← accordion panel collapsed
+│           Reparto Chirurgia · MILP gen. │
+│           Ultimo turno: —               │  ← never generated yet
 │                                         │
 └─────────────────────────────────────────┘
 ```
@@ -300,7 +319,7 @@ A test (`test-i18n.R`) enforces that `names(STRINGS$it) == names(STRINGS$en)`.
 | Top-bar | custom `div` with `input_dark_mode("mode")` + `input_switch("lang")` |
 | Hero CTA | `actionButton(class = "btn-primary btn-lg")` with smooth-scroll JS handler |
 | Centre list | `accordion(open = FALSE, multiple = FALSE)` with one `accordion_panel` per centre |
-| Centre header (collapsed) | `accordion_panel` `title = ...` |
+| Centre header (collapsed) | `accordion_panel(title = tagList(tags$img(src = centre$logo_path, height = 28), tags$span(centre$name), tags$br(), tags$small(centre$subtitle_xx, class = "text-muted"), tags$br(), tags$small(last_generated_badge(centre$id), class = "text-success")))` |
 | Passcode gate | `passwordInput()` + `actionButton()`; on validate → `shiny::insertUI` reveals actions |
 | Month chooser | `selectInput()` with months pre-populated from current year ±6 |
 | File uploads | `fileInput("desiderata_<id>", accept = ".xlsx")`, same for rules |
@@ -412,6 +431,18 @@ Language switch invalidates all `tr()` calls because `current_lang()` is reactiv
 
 `downloadHandler` writes the xlsx via existing `R/io_write.R` (`write_output_workbook` for generic, future `write_iov_bundle` for IOV — defined in `2026-05-21-iov-planner-design.md` §6 and to be implemented as part of P-IOV-4).
 
+The download filename is rendered from the centre's `download_filename` template by substituting `{centre_id}` and `{target_month}`:
+
+```r
+render_download_filename <- function(template, centre_id, target_month) {
+  template |>
+    gsub("{centre_id}", centre_id, x = _, fixed = TRUE) |>
+    gsub("{target_month}", target_month, x = _, fixed = TRUE)
+}
+```
+
+On each successful generation, `R/iov_logs.R` (new) appends a JSONL line to `logs/<centre-id>.jsonl` with `target_month`, `generate_at` (ISO 8601), `duration_seconds`, and `status`. The same module exposes `last_generated_badge(centre_id)` which reads the latest record and returns localised text (e.g. "Ultimo turno: 29 lug 2026" / "Last schedule: Jul 29, 2026") or the em-dash if the log is empty.
+
 ---
 
 ## 8. Validation & Testing Strategy
@@ -482,6 +513,5 @@ Total estimated effort:
 
 1. **Smooth-scroll JS**: implement with vanilla JS (`scrollIntoView({behavior:'smooth'})`) inline or via a small `inst/www/scroll.js` helper? — Decision: inline for v2, refactor if pattern repeats.
 2. **Month chooser**: plain `selectInput` with hard-coded month list, or `airDatepickerInput` for richer UX? — Decision: `selectInput` for v2 simplicity; revisit if user feedback complains.
-3. **Centre logos**: do we want a small unit logo (e.g. IOV crest) next to the centre name in the accordion header? — Decision: deferred; ask the user post-launch.
-4. **Output download filename**: `turni_<centre-id>_<YYYY-MM>.xlsx`? Make configurable per centre via YAML? — Decision: hard-coded pattern for v2.
-5. **Generation history per centre**: should the centre card show "Last generated: <date>"? — Decision: nice-to-have, deferred to v2.1.
+
+(Items 3, 4, 5 from the previous draft are now locked decisions #11, #12, #13 in section 2.)
