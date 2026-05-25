@@ -1,17 +1,17 @@
-# IOV Planner — roster derivation.
+# IOV Planner - roster derivation.
 #
 # Combines parsed inputs (from R/iov_parse.R) with the canonical member list
 # in `iov/analysis/IOV_MEMBERS.xlsx` to produce the unified `resolved_roster`
-# state described in spec §4.2.
+# state described in spec S4.2.
 #
 # Public functions:
 #   - derive_roster(parsed_inputs, members_path, reparto_selection)
 #   - read_iov_members(path)
 #
 # All public functions return tibbles or named lists. No package state is
-# mutated. All package access is namespace-qualified — no library() calls.
+# mutated. All package access is namespace-qualified - no library() calls.
 #
-# Spec: docs/superpowers/specs/2026-05-21-iov-planner-design.md §4.2.
+# Spec: docs/superpowers/specs/2026-05-21-iov-planner-design.md S4.2.
 
 #' Parse the canonical IOV_MEMBERS workbook.
 #'
@@ -44,8 +44,10 @@ read_iov_members <- function(path) {
 
 #' Normalise a surname for cross-source matching.
 #'
-#' Uppercase, strip trailing apostrophes (SOLDA' → SOLDA), trim whitespace,
+#' Uppercase, strip trailing apostrophes (SOLDA' -> SOLDA), trim whitespace,
 #' collapse multiple internal spaces.
+#' @param x character vector of raw surname strings.
+#' @noRd
 .iov_normalize_name <- function(x) {
   if (length(x) == 0L) return(character(0))
   out <- toupper(trimws(as.character(x)))
@@ -59,9 +61,12 @@ read_iov_members <- function(path) {
 #'
 #' Joins by normalised surname; when a surname appears multiple times in
 #' members (e.g. Sartori), disambiguates by the resident's year tag
-#' (matched against the `notes` field which contains "(X°)" for ambiguous
+#' (matched against the `notes` field which contains "(X deg)" for ambiguous
 #' Sartori entries in IOV_MEMBERS). Marks `ambiguous = TRUE` when year tag
 #' cannot disambiguate.
+#' @param desiderata_residents data frame with columns `resident` and `year`.
+#' @param members tibble from `read_iov_members()`.
+#' @noRd
 .iov_match_residents <- function(desiderata_residents, members) {
   d <- tibble::tibble(
     desiderata_name = desiderata_residents$resident,
@@ -72,8 +77,8 @@ read_iov_members <- function(path) {
   m_residents <- dplyr::filter(members, .data$role %in%
     c("Specializzando", "Specializzando (departed)", "Specialista junior"))
   m_residents$norm <- .iov_normalize_name(m_residents$last_name)
-  # Year hint from notes: "(X°)" → X
-  m_residents$year_hint <- sub(".*\\(([0-9])°\\).*", "\\1", m_residents$notes)
+  # Year hint from notes: "(X deg)" -> X
+  m_residents$year_hint <- sub(".*\\(([0-9])\u00b0\\).*", "\\1", m_residents$notes)
   m_residents$year_hint[m_residents$year_hint == m_residents$notes] <- NA_character_
 
   resolve_one <- function(name_norm, year) {
@@ -87,7 +92,7 @@ read_iov_members <- function(path) {
                   first_name = candidates$first_name[1],
                   matched = TRUE, ambiguous = FALSE))
     }
-    # Multiple candidates — try year disambiguation
+    # Multiple candidates - try year disambiguation
     hit <- candidates[!is.na(candidates$year_hint) &
                         candidates$year_hint == year, , drop = FALSE]
     if (nrow(hit) == 1L) {
@@ -110,8 +115,8 @@ read_iov_members <- function(path) {
   )
 }
 
-#' Constants — clinic-only and full-inpatient attending sets (spec §3.1).
-#' Changing these requires a spec amendment.
+# Constants - clinic-only and full-inpatient attending sets (spec S3.1).
+# Changing these requires a spec amendment.
 .iov_clinic_only_attendings <- c("LONARDI", "BERGAMO")
 .iov_inpatient_attendings   <- c("GALIANO", "BOLSHINSKY")
 

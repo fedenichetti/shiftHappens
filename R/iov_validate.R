@@ -1,4 +1,4 @@
-# IOV Planner — input validation.
+# IOV Planner - input validation.
 #
 # Runs a series of cross-checks on the parsed inputs (from R/iov_parse.R)
 # and the resolved roster (from R/iov_roster.R) and returns a structured
@@ -12,13 +12,17 @@
 # Public function:
 #   - validate_iov_inputs(parsed_inputs, resolved_roster)
 #
-# All package access is namespace-qualified — no library() calls.
+# All package access is namespace-qualified - no library() calls.
 #
-# Spec: docs/superpowers/specs/2026-05-21-iov-planner-design.md §5.1 (HARD
-# constraints H4, H7) and §5.2 (SOFT constraint S4).
+# Spec: docs/superpowers/specs/2026-05-21-iov-planner-design.md S5.1 (HARD
+# constraints H4, H7) and S5.2 (SOFT constraint S4).
 
 # (functions added in subsequent tasks)
 
+#' Check for persons in assenze not found in the roster.
+#' @param parsed_inputs Named list from `read_iov_inputs()`.
+#' @param resolved_roster Named list from `derive_roster()`.
+#' @noRd
 .iov_check_unknown_residents <- function(parsed_inputs, resolved_roster) {
   if (nrow(parsed_inputs$assenze_long) == 0L) return(character(0))
   known <- c(resolved_roster$residents$last_name,
@@ -33,6 +37,9 @@
           unknown_orig)
 }
 
+#' Check for ambiguous resident surnames that cannot be disambiguated.
+#' @param resolved_roster Named list from `derive_roster()`.
+#' @noRd
 .iov_check_ambiguous_sartori <- function(resolved_roster) {
   amb <- resolved_roster$residents$desiderata_name[
     resolved_roster$residents$ambiguous
@@ -45,6 +52,9 @@
   )
 }
 
+#' Check for residents with unrecognised year colour tag.
+#' @param resolved_roster Named list from `derive_roster()`.
+#' @noRd
 .iov_check_unknown_years <- function(resolved_roster) {
   unk <- resolved_roster$residents$desiderata_name[
     !is.na(resolved_roster$residents$year) &
@@ -58,18 +68,24 @@
   )
 }
 
+#' Check that REPARTO selection names are active residents.
+#' @param resolved_roster Named list from `derive_roster()`.
+#' @noRd
 .iov_check_reparto_validity <- function(resolved_roster) {
   pool <- resolved_roster$residents$last_name
   pool <- pool[!is.na(pool)]
   invalid <- setdiff(resolved_roster$reparto_block, pool)
   if (length(invalid) == 0L) return(character(0))
   sprintf(
-    paste0("Nome '%s' selezionato per REPARTO non è un specializzando ",
+    paste0("Nome '%s' selezionato per REPARTO non \u00e8 un specializzando ",
            "attivo nel roster del mese"),
     invalid
   )
 }
 
+#' Check that PROSPETTO contains rows for the target month.
+#' @param parsed_inputs Named list from `read_iov_inputs()`.
+#' @noRd
 .iov_check_month_consistency <- function(parsed_inputs) {
   in_month <- format(parsed_inputs$prospetto$date, "%Y-%m") ==
     parsed_inputs$target_month
@@ -85,6 +101,11 @@
 # SOFT warning helpers (Task 2.9)
 # ---------------------------------------------------------------------------
 
+#' Check for residents exceeding the recommended weekend-off threshold.
+#' @param parsed_inputs Named list from `read_iov_inputs()`.
+#' @param resolved_roster Named list from `derive_roster()`.
+#' @param threshold Integer maximum allowed weekend-off days (default 2L).
+#' @noRd
 .iov_check_weekend_off_cap <- function(parsed_inputs, resolved_roster,
                                        threshold = 2L) {
   d <- parsed_inputs$desiderata_long
@@ -101,12 +122,15 @@
   violations <- counts$resident[counts$n > threshold]
   if (length(violations) == 0L) return(character(0))
   sprintf(
-    paste0("Resident '%s' ha più di %d weekend marcati indisponibili ",
+    paste0("Resident '%s' ha pi\u00f9 di %d weekend marcati indisponibili ",
            "(soglia raccomandata)"),
     violations, threshold
   )
 }
 
+#' Warn about residents whose year tag is unknown (soft duplicate of HARD check).
+#' @param resolved_roster Named list from `derive_roster()`.
+#' @noRd
 .iov_check_unknown_year_warning <- function(resolved_roster) {
   unk <- resolved_roster$residents$desiderata_name[
     !is.na(resolved_roster$residents$year) &
@@ -114,12 +138,15 @@
   ]
   if (length(unk) == 0L) return(character(0))
   sprintf(
-    paste0("Resident '%s' senza tag d'anno: solver lo tratterà come ",
+    paste0("Resident '%s' senza tag d'anno: solver lo tratter\u00e0 come ",
            "ineleggibile a sostituzioni junior"),
     unk
   )
 }
 
+#' Warn when an ONCO 1 night has fewer than 2 available residents in desiderata.
+#' @param parsed_inputs Named list from `read_iov_inputs()`.
+#' @noRd
 .iov_check_prospetto_desiderata_coherence <- function(parsed_inputs) {
   onco1_nights <- parsed_inputs$prospetto$date[
     parsed_inputs$prospetto$night_unit == "ONCOLOGIA 1" &
@@ -154,6 +181,10 @@
   warnings
 }
 
+#' Warn if a clinic-only attending appears in the assenze file.
+#' @param parsed_inputs Named list from `read_iov_inputs()`.
+#' @param resolved_roster Named list from `derive_roster()`.
+#' @noRd
 .iov_check_clinic_only_in_assenze <- function(parsed_inputs, resolved_roster) {
   if (nrow(parsed_inputs$assenze_long) == 0L) return(character(0))
   persons <- .iov_normalize_name(parsed_inputs$assenze_long$person)
@@ -174,6 +205,10 @@
   "09" = "Sep", "10" = "Oct", "11" = "Nov", "12" = "Dec"
 )
 
+#' Warn when a resident is not listed as active in the target month per IOV_MEMBERS.
+#' @param resolved_roster Named list from `derive_roster()`.
+#' @param members_path Absolute path to `IOV_MEMBERS.xlsx`.
+#' @noRd
 .iov_check_active_months_mismatch <- function(resolved_roster, members_path) {
   if (is.null(members_path) || !file.exists(members_path)) return(character(0))
   members <- read_iov_members(members_path)
@@ -188,14 +223,14 @@
   warnings <- character(0)
   for (name in pool) {
     row <- members[members$last_name == name, , drop = FALSE]
-    if (nrow(row) == 0L) next  # absent from IOV_MEMBERS — separate concern
+    if (nrow(row) == 0L) next  # absent from IOV_MEMBERS - separate concern
     active_str <- row$active_months_2026[1]
     if (is.na(active_str) || active_str == "" || active_str == "all") next
     months_listed <- trimws(strsplit(active_str, ";", fixed = TRUE)[[1]])
     if (!(target_abbr %in% months_listed)) {
       warnings <- c(warnings, sprintf(
         paste0("Resident '%s' non ha %s in active_months_2026 ",
-               "(IOV_MEMBERS: '%s'); verifica se IOV_MEMBERS è aggiornato"),
+               "(IOV_MEMBERS: '%s'); verifica se IOV_MEMBERS \u00e8 aggiornato"),
         name, target_abbr, active_str
       ))
     }
