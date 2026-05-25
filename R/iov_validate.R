@@ -202,3 +202,38 @@
   }
   warnings
 }
+
+#' Run all input validation checks and return a structured result.
+#'
+#' Blockers are HARD errors that prevent the solver. Warnings are SOFT
+#' issues to surface in the Shiny panel but allow generation.
+#'
+#' All checks run unconditionally (no early-exit) so the user sees the
+#' FULL picture in one pass without fix -> re-validate -> fix iterations.
+#'
+#' @param parsed_inputs Named list from `read_iov_inputs()`.
+#' @param resolved_roster Named list from `derive_roster()`. Must include
+#'   `meta$members_path` for the active_months_2026 mismatch check; if
+#'   absent or NULL, that check is skipped silently.
+#' @return Named list (blockers, warnings). Each is a character vector
+#'   (possibly empty) of Italian-language messages.
+#' @export
+validate_iov_inputs <- function(parsed_inputs, resolved_roster) {
+  members_path <- resolved_roster$meta$members_path
+
+  blockers <- c(
+    .iov_check_unknown_residents(parsed_inputs, resolved_roster),
+    .iov_check_ambiguous_sartori(resolved_roster),
+    .iov_check_unknown_years(resolved_roster),
+    .iov_check_reparto_validity(resolved_roster),
+    .iov_check_month_consistency(parsed_inputs)
+  )
+  warnings <- c(
+    .iov_check_weekend_off_cap(parsed_inputs, resolved_roster, threshold = 2L),
+    .iov_check_unknown_year_warning(resolved_roster),
+    .iov_check_prospetto_desiderata_coherence(parsed_inputs),
+    .iov_check_clinic_only_in_assenze(parsed_inputs, resolved_roster),
+    .iov_check_active_months_mismatch(resolved_roster, members_path)
+  )
+  list(blockers = blockers, warnings = warnings)
+}

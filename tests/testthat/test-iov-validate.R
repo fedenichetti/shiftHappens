@@ -163,6 +163,71 @@ test_that(".iov_check_clinic_only_in_assenze flags Lonardi/Bergamo in assenze", 
   expect_match(warnings, "Lonardi", ignore.case = TRUE)
 })
 
+test_that("validate_iov_inputs aggregates all blockers and warnings", {
+  r <- fixture_roster()  # has 1 ambiguous Sartori + 1 unknown year
+  i <- fixture_inputs()
+
+  result <- validate_iov_inputs(i, r)
+
+  expect_named(result, c("blockers", "warnings"))
+  expect_type(result$blockers, "character")
+  expect_type(result$warnings, "character")
+
+  # Blockers: ambiguous Sartori + unknown year (Sartori again)
+  expect_true(length(result$blockers) >= 2L)
+  expect_true(any(grepl("Sartori", result$blockers)))
+
+  # Warnings: unknown_year_warning fires for the same Sartori (soft mirror)
+  # + prospetto_desiderata_coherence likely fires (no NOTTE rows in fixture)
+  expect_true(length(result$warnings) >= 1L)
+})
+
+test_that("validate_iov_inputs returns empty vectors on fully-clean inputs", {
+  # Build a clean fixture: no ambiguous, no unknown year, all dates aligned
+  r <- list(
+    residents = tibble::tibble(
+      last_name = "BOSIO", first_name = "Marco",
+      desiderata_name = "Bosio", year = "5",
+      matched = TRUE, ambiguous = FALSE, in_reparto_block = FALSE
+    ),
+    specialists = tibble::tibble(
+      last_name = c("LONARDI", "PROCACCIO"),
+      first_name = c("Sara", "Giorgio"),
+      role = c("Direttrice", "Specialista"),
+      primary_group = c("Direzione", "GASTROENTERICO"),
+      subgroup_secondary = c(NA_character_, "Pancreas"),
+      in_guardie_rotation = c(FALSE, TRUE),
+      fasi_i_eligible = c(FALSE, FALSE),
+      is_clinic_only = c(TRUE, FALSE), is_full_inpatient = c(FALSE, FALSE)
+    ),
+    reparto_block = character(),
+    clinic_only_attendings = c("LONARDI", "BERGAMO"),
+    inpatient_attendings = c("GALIANO", "BOLSHINSKY"),
+    juniors_eligible_for_substitution = character(),
+    meta = list(target_month = "2026-07", members_count = 2L,
+                ambiguous_names = character(), members_path = NULL)
+  )
+  i <- list(
+    target_month = "2026-07",
+    prospetto = tibble::tibble(
+      date = as.Date("2026-07-04"), dow = "Sab",
+      day_unit = "ANESTESTISTA", night_unit = "ONCOLOGIA 2"  # not ONCO 1!
+    ),
+    desiderata_long = tibble::tibble(
+      resident = "Bosio", year = "5", date = as.Date("2026-07-04"),
+      dow = "Sab", shift = "GIORNO", status = "available",
+      preference = "neutral", raw_value = NA_character_
+    ),
+    assenze_long = tibble::tibble(
+      date = as.Date(character()), dow = character(), person = character(),
+      absence_type = character(), slot = character()
+    )
+  )
+  result <- validate_iov_inputs(i, r)
+  expect_equal(result$blockers, character(0))
+  expect_equal(result$warnings, character(0))
+})
+
 test_that(".iov_check_active_months_mismatch flags residents not active in target month", {
   members_fixture <- tempfile(fileext = ".xlsx")
   .iov_fx_members(members_fixture)
