@@ -161,7 +161,7 @@ derive_roster <- function(parsed_inputs, members_path,
   ]
 
   specialists_members <- dplyr::filter(
-    members, .data$role %in% c("Direttrice", "Specialista")
+    members, .data$role %in% c("Direttrice", "Specialista", "Specialista junior")
   )
   specialists <- tibble::tibble(
     last_name           = specialists_members$last_name,
