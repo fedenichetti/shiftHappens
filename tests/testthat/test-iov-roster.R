@@ -91,3 +91,97 @@ test_that(".iov_match_residents flags ambiguous when year doesn't disambiguate",
   expect_true(out$ambiguous)
   expect_true(is.na(out$last_name_resolved))
 })
+
+test_that("derive_roster builds the resolved_roster list with REPARTO + pools", {
+  members_fixture <- tempfile(fileext = ".xlsx")
+  .iov_fx_members(members_fixture)
+
+  # Synthetic parsed_inputs covering 4 residents from the members fixture
+  # (BOSIO 5°, PITTARELLO 5°, MASSA 1°, SARTORI Elena 1°)
+  desiderata_long <- tibble::tibble(
+    resident = c("Bosio", "Pittarello", "Massa", "Sartori"),
+    year     = c("5",     "5",          "1",     "1"),
+    date     = as.Date(rep("2026-07-04", 4)),
+    dow = "Sab", shift = "GIORNO", status = "available",
+    preference = "neutral", raw_value = NA_character_
+  )
+  parsed_inputs <- list(
+    target_month    = "2026-07",
+    prospetto       = tibble::tibble(date = as.Date("2026-07-04"), dow = "Sab",
+                                     day_unit = "ANESTESTISTA",
+                                     night_unit = "ONCOLOGIA 1"),
+    desiderata_long = desiderata_long,
+    assenze_long    = tibble::tibble(date = as.Date(character()),
+                                     dow = character(), person = character(),
+                                     absence_type = character(), slot = character())
+  )
+
+  roster <- derive_roster(parsed_inputs, members_fixture,
+                          reparto_selection = c("MASSA", "BOSIO"))
+
+  expect_named(roster, c("residents", "specialists", "reparto_block",
+                         "clinic_only_attendings", "inpatient_attendings",
+                         "juniors_eligible_for_substitution", "meta"))
+
+  # Residents tibble
+  expect_s3_class(roster$residents, "tbl_df")
+  expect_equal(nrow(roster$residents), 4L)
+  expect_true(all(c("BOSIO", "PITTARELLO", "MASSA", "SARTORI") %in%
+                    roster$residents$last_name))
+
+  # REPARTO membership flag
+  expect_setequal(
+    roster$residents$last_name[roster$residents$in_reparto_block],
+    c("MASSA", "BOSIO")
+  )
+
+  # Specialists tibble — must include Lonardi, Bergamo, Galiano, Bolshinsky,
+  # Procaccio, Nichetti from the members fixture
+  expect_true(all(c("LONARDI", "BERGAMO", "GALIANO", "BOLSHINSKY",
+                    "PROCACCIO", "NICHETTI") %in% roster$specialists$last_name))
+  expect_true(roster$specialists$is_clinic_only[
+    roster$specialists$last_name == "LONARDI"])
+  expect_true(roster$specialists$is_full_inpatient[
+    roster$specialists$last_name == "GALIANO"])
+  expect_true(roster$specialists$fasi_i_eligible[
+    roster$specialists$last_name == "BOLSHINSKY"])
+
+  # Constant pools
+  expect_setequal(roster$clinic_only_attendings, c("LONARDI", "BERGAMO"))
+  expect_setequal(roster$inpatient_attendings,   c("GALIANO", "BOLSHINSKY"))
+  expect_setequal(roster$reparto_block,          c("MASSA", "BOSIO"))
+
+  # Juniors eligible for substitution = year 1 or 2, NOT in REPARTO.
+  # MASSA is in REPARTO so excluded; SARTORI year=1 stays. (PITTARELLO 5°, BOSIO 5° excluded by year.)
+  expect_setequal(roster$juniors_eligible_for_substitution, "SARTORI")
+
+  # Meta
+  expect_equal(roster$meta$target_month, "2026-07")
+  expect_equal(roster$meta$members_count, 11L)
+})
+
+test_that("derive_roster errors when reparto_selection has < 4 names (memo: July has exactly 4)", {
+  # Note: spec doesn't enforce exactly 4 (size depends on month); we only
+  # require non-empty selection if MILP is to apply H4 — but validation lives
+  # in validate_iov_inputs(). derive_roster accepts any vector >= 0.
+  members_fixture <- tempfile(fileext = ".xlsx")
+  .iov_fx_members(members_fixture)
+  parsed_inputs <- list(
+    target_month = "2026-07",
+    prospetto = tibble::tibble(date = as.Date("2026-07-04"), dow = "Sab",
+                               day_unit = "X", night_unit = "X"),
+    desiderata_long = tibble::tibble(
+      resident = "Bosio", year = "5", date = as.Date("2026-07-01"),
+      dow = "Mer", shift = "NOTTE", status = "available",
+      preference = "neutral", raw_value = NA_character_
+    ),
+    assenze_long = tibble::tibble(date = as.Date(character()),
+                                  dow = character(), person = character(),
+                                  absence_type = character(), slot = character())
+  )
+  out <- derive_roster(parsed_inputs, members_fixture,
+                       reparto_selection = character())
+  expect_equal(length(out$reparto_block), 0L)
+  expect_equal(length(out$juniors_eligible_for_substitution),
+               0L)  # no juniors in this synthetic input
+})

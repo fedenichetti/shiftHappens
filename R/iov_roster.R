@@ -109,3 +109,79 @@ read_iov_members <- function(path) {
     ambiguous           = purrr::map_lgl(resolved, "ambiguous")
   )
 }
+
+#' Constants — clinic-only and full-inpatient attending sets (spec §3.1).
+#' Changing these requires a spec amendment.
+.iov_clinic_only_attendings <- c("LONARDI", "BERGAMO")
+.iov_inpatient_attendings   <- c("GALIANO", "BOLSHINSKY")
+
+#' Build the unified resolved_roster from parsed inputs + members + REPARTO.
+#'
+#' @param parsed_inputs Named list from `read_iov_inputs()`.
+#' @param members_path Absolute path to `IOV_MEMBERS.xlsx`.
+#' @param reparto_selection Character vector of resident last_names
+#'   (UPPERCASE) chosen for the REPARTO block of the target month.
+#' @return Named list (residents, specialists, reparto_block,
+#'   clinic_only_attendings, inpatient_attendings,
+#'   juniors_eligible_for_substitution, meta).
+#' @export
+derive_roster <- function(parsed_inputs, members_path,
+                          reparto_selection = character()) {
+  members <- read_iov_members(members_path)
+
+  # Distinct residents in this month's desiderata
+  desiderata_residents <- dplyr::distinct(
+    parsed_inputs$desiderata_long, .data$resident, .data$year
+  )
+
+  match_result <- .iov_match_residents(desiderata_residents, members)
+
+  reparto_norm <- .iov_normalize_name(reparto_selection)
+
+  residents <- tibble::tibble(
+    last_name        = match_result$last_name_resolved,
+    first_name       = match_result$first_name_resolved,
+    desiderata_name  = match_result$desiderata_name,
+    year             = match_result$year,
+    matched          = match_result$matched,
+    ambiguous        = match_result$ambiguous
+  )
+  residents$in_reparto_block <- !is.na(residents$last_name) &
+    residents$last_name %in% reparto_norm
+
+  juniors_pool <- residents$last_name[
+    !is.na(residents$last_name) &
+      residents$year %in% c("1", "2") &
+      !residents$in_reparto_block
+  ]
+
+  specialists_members <- dplyr::filter(
+    members, .data$role %in% c("Direttrice", "Specialista")
+  )
+  specialists <- tibble::tibble(
+    last_name           = specialists_members$last_name,
+    first_name          = specialists_members$first_name,
+    role                = specialists_members$role,
+    primary_group       = specialists_members$primary_group,
+    subgroup_secondary  = specialists_members$subgroup_secondary,
+    in_guardie_rotation = specialists_members$in_guardie_rotation,
+    fasi_i_eligible     = specialists_members$reperibile_fasi_i
+  )
+  specialists$is_clinic_only    <- specialists$last_name %in% .iov_clinic_only_attendings
+  specialists$is_full_inpatient <- specialists$last_name %in% .iov_inpatient_attendings
+
+  list(
+    residents                          = residents,
+    specialists                        = specialists,
+    reparto_block                      = reparto_norm,
+    clinic_only_attendings             = .iov_clinic_only_attendings,
+    inpatient_attendings               = .iov_inpatient_attendings,
+    juniors_eligible_for_substitution  = juniors_pool,
+    meta = list(
+      target_month    = parsed_inputs$target_month,
+      members_path    = members_path,
+      members_count   = nrow(members),
+      ambiguous_names = match_result$desiderata_name[match_result$ambiguous]
+    )
+  )
+}
