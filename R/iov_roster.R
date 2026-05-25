@@ -54,3 +54,58 @@ read_iov_members <- function(path) {
   out[is.na(x) | nchar(out) == 0L] <- NA_character_
   out
 }
+
+#' Cross-reference desiderata residents against the canonical members table.
+#'
+#' Joins by normalised surname; when a surname appears multiple times in
+#' members (e.g. Sartori), disambiguates by the resident's year tag
+#' (matched against the `notes` field which contains "(X°)" for ambiguous
+#' Sartori entries in IOV_MEMBERS). Marks `ambiguous = TRUE` when year tag
+#' cannot disambiguate.
+.iov_match_residents <- function(desiderata_residents, members) {
+  d <- tibble::tibble(
+    desiderata_name = desiderata_residents$resident,
+    year            = as.character(desiderata_residents$year),
+    norm            = .iov_normalize_name(desiderata_residents$resident)
+  )
+
+  m_residents <- dplyr::filter(members, .data$role %in%
+    c("Specializzando", "Specializzando (departed)", "Specialista junior"))
+  m_residents$norm <- .iov_normalize_name(m_residents$last_name)
+  # Year hint from notes: "(X°)" → X
+  m_residents$year_hint <- sub(".*\\(([0-9])°\\).*", "\\1", m_residents$notes)
+  m_residents$year_hint[m_residents$year_hint == m_residents$notes] <- NA_character_
+
+  resolve_one <- function(name_norm, year) {
+    candidates <- m_residents[m_residents$norm == name_norm, , drop = FALSE]
+    if (nrow(candidates) == 0L) {
+      return(list(last_name = NA_character_, first_name = NA_character_,
+                  matched = FALSE, ambiguous = FALSE))
+    }
+    if (nrow(candidates) == 1L) {
+      return(list(last_name = candidates$last_name[1],
+                  first_name = candidates$first_name[1],
+                  matched = TRUE, ambiguous = FALSE))
+    }
+    # Multiple candidates — try year disambiguation
+    hit <- candidates[!is.na(candidates$year_hint) &
+                        candidates$year_hint == year, , drop = FALSE]
+    if (nrow(hit) == 1L) {
+      return(list(last_name = hit$last_name[1], first_name = hit$first_name[1],
+                  matched = TRUE, ambiguous = FALSE))
+    }
+    # Cannot disambiguate
+    list(last_name = NA_character_, first_name = NA_character_,
+         matched = FALSE, ambiguous = TRUE)
+  }
+
+  resolved <- purrr::map2(d$norm, d$year, resolve_one)
+  tibble::tibble(
+    desiderata_name     = d$desiderata_name,
+    year                = d$year,
+    last_name_resolved  = purrr::map_chr(resolved, "last_name"),
+    first_name_resolved = purrr::map_chr(resolved, "first_name"),
+    matched             = purrr::map_lgl(resolved, "matched"),
+    ambiguous           = purrr::map_lgl(resolved, "ambiguous")
+  )
+}
