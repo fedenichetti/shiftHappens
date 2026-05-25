@@ -84,3 +84,41 @@
   openxlsx2::wb_save(wb, path, overwrite = TRUE)
   invisible(path)
 }
+
+.iov_fx_members <- function(path) {
+  wb <- openxlsx2::wb_workbook()$add_worksheet("members")
+  members <- data.frame(
+    last_name           = c("LONARDI", "BERGAMO", "GALIANO", "BOLSHINSKY",
+                            "PROCACCIO", "NICHETTI",
+                            "BOSIO", "PITTARELLO", "MASSA", "SARTORI", "SARTORI"),
+    first_name          = c("Sara", "Francesca", "Antonella", "Yulia",
+                            "Giorgio", "Federico",
+                            "Marco", "Andrea", "Elena", "Beatrice", "Elena"),
+    role                = c("Direttrice", "Specialista", "Specialista", "Specialista",
+                            "Specialista", "Specialista",
+                            "Specializzando", "Specializzando", "Specializzando",
+                            "Specializzando", "Specializzando"),
+    unit                = rep("ONCO 1", 11),
+    primary_group       = c("Direzione", "GASTROENTERICO", "REPARTO", "REPARTO",
+                            "GASTROENTERICO", "GASTROENTERICO",
+                            NA, NA, NA, NA, NA),
+    subgroup_secondary  = c(NA, "Colon", NA, "Phase-I",
+                            "Pancreas", "Pancreas",
+                            NA, NA, NA, NA, NA),
+    in_guardie_rotation = c("no", "no", "no", "no",
+                            "yes", "yes",
+                            "yes", "yes", "yes", "yes", "yes"),
+    reperibile_fasi_i   = c("no", "no", "no", "yes",
+                            "no", "yes",
+                            "no", "no", "no", "no", "no"),
+    notes               = c("clinic-only direttrice", "clinic-only",
+                            "full-inpatient", "full-inpatient phase-I",
+                            "", "", "", "", "", "Beatrice (5°)", "Elena (1°)"),
+    active_months_2026  = rep("all", 11),
+    stringsAsFactors    = FALSE
+  )
+  wb <- openxlsx2::wb_add_data(wb, sheet = 1, x = members, dims = "A1",
+                                col_names = TRUE)
+  openxlsx2::wb_save(wb, path, overwrite = TRUE)
+  invisible(path)
+}
