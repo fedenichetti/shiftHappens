@@ -1,0 +1,42 @@
+Package: shifthappens
+Type: Package
+Title: On-Call Scheduler for Hospital Surgical Units
+Version: 0.1.0
+Author: Federico Nichetti
+Maintainer: Federico Nichetti <federico.nichetti@gmail.com>
+Description: Stateless Shiny application that generates monthly on-call
+    schedules for hospital surgical teams via mixed-integer linear
+    programming, taking historical assignments, absences, and individual
+    preferences as Excel input.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 7.3.3
+Depends:
+    R (>= 4.3)
+Imports:
+    shiny,
+    shinyjs,
+    bslib,
+    readxl,
+    openxlsx2,
+    ompr,
+    ompr.roi,
+    ROI,
+    ROI.plugin.glpk,
+    Rglpk,
+    yaml,
+    lubridate,
+    DT,
+    logger,
+    tibble,
+    dplyr,
+    tidyr,
+    purrr,
+    rlang,
+    htmltools
+Suggests:
+    testthat (>= 3.0.0),
+    highs,
+    rprojroot
+Config/testthat/edition: 3
