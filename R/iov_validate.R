@@ -28,9 +28,11 @@
   known <- c(resolved_roster$residents$last_name,
              resolved_roster$specialists$last_name)
   known <- known[!is.na(known)]
+  # Normalise both sides to match across apostrophe-drift (SOLDA' / SOLDA).
+  known_norm   <- .iov_normalize_name(known)
   persons_orig <- unique(parsed_inputs$assenze_long$person)
   persons_norm <- .iov_normalize_name(persons_orig)
-  is_unknown   <- !persons_norm %in% known
+  is_unknown   <- !persons_norm %in% known_norm
   unknown_orig <- persons_orig[is_unknown & !is.na(persons_norm)]
   if (length(unknown_orig) == 0L) return(character(0))
   sprintf("Persona '%s' nel file assenze non trovata nel roster IOV_MEMBERS",
